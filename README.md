@@ -36,6 +36,13 @@ Questions, news and help: **[gg.puckpeak.com](https://gg.puckpeak.com)**
 - 🔒 **Safe.** Your game files are never changed, every save is backed up first, and **Unpatch** puts everything back.
 - 🔄 **Stays fresh.** It checks for new versions itself.
 
+<div align="center">
+<img src="docs/shot_patch.png" width="48%" alt="The Game patch tab: patched, online on the Overtime server"> <img src="docs/shot_multiplayer.png" width="48%" alt="The Multiplayer tab">
+<img src="docs/shot_roster.png" width="48%" alt="The Roster tab with the 2026-27 rosters"> <img src="docs/shot_lines.png" width="48%" alt="The Lines tab">
+<img src="docs/shot_jerseys.png" width="48%" alt="The Jerseys & gear tab"> <img src="docs/shot_calendar.png" width="48%" alt="The Calendar tab">
+<img src="docs/shot_office.png" width="48%" alt="The Front office tab"> <img src="docs/shot_update.png" width="48%" alt="The Update tab">
+</div>
+
 ## 🚀 Get started
 
 1. Download `OvertimeNHL19.exe` (Windows 10 or 11) from the [release page](../../releases/latest). Windows SmartScreen
