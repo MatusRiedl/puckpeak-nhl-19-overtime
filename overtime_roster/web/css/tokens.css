@@ -1,0 +1,74 @@
+/* NHL 19's look: the game's own colours (re/extract/boot/nhl/ui/default.constants, names in the comments) on Legacy's
+   layout. Square corners. Heads, labels and tabs: caps, bold, upright, normal width (.caps in app.css); all text is
+   Titillium Web (bundled, OFL: fonts/OFL.txt). Until 2026-10-29 the heads were Bahnschrift condensed and slanted like
+   NHL 19's; the owner found that hard to read, so --head-style and --head-stretch are the one place to change it. */
+@font-face { font-family: 'Titillium Web'; font-weight: 400; font-display: block;
+  src: url(../fonts/titillium-web-400-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Titillium Web'; font-weight: 400; font-display: block;
+  src: url(../fonts/titillium-web-400-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Titillium Web'; font-weight: 600; font-display: block;
+  src: url(../fonts/titillium-web-600-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Titillium Web'; font-weight: 600; font-display: block;
+  src: url(../fonts/titillium-web-600-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Titillium Web'; font-weight: 700; font-display: block;
+  src: url(../fonts/titillium-web-700-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Titillium Web'; font-weight: 700; font-display: block;
+  src: url(../fonts/titillium-web-700-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+:root {
+  color-scheme: dark;
+
+  /* surfaces */
+  --black: #080A0C;          /* DARK_BLACK: Help bar, drawer */
+  --page: #1D1E29;           /* BLACK_BG_PRIMARY_: the page */
+  --panel: #222932;          /* DARK_GRAY_BLUE: cards */
+  --panel-deep: #181D23;     /* DARKER_GRAY_BLUE: card bodies, inputs' wells */
+  --tile: #262A31;           /* tiles, rows, buttons */
+  --tile-hi: #323842;        /* focus and hover: a lighter fill (plus the red bar) */
+  --input: #12161B;          /* text fields and selects */
+  --strip: #3A3F47;          /* hatched header strips of the cards */
+  --line: rgba(255, 255, 255, .07);
+  --line-hi: rgba(255, 255, 255, .16);
+
+  /* text */
+  --text: #FFFFFF;           /* BRIGHT_WHITE: heads, picked */
+  --text-soft: #E6E6E6;      /* WHITE: body text */
+  --text-2: #B1BAC1;         /* LIGHT_GRAY: secondary */
+  --text-3: #838E96;         /* GRAY: faint, idle tabs */
+  --text-off: #45484C;       /* DARK_GRAY: disabled */
+  --steel: #686F74;          /* BLUE_TINTED_GRAY */
+
+  /* accents */
+  --accent: #FF5D54;         /* ORANGE_PRIMARY: active tab, focus bar, FEATURED, home games */
+  --accent-hi: #FF8078;
+  --bar: #D7143C;            /* RED: progress fill, danger */
+  --dark-red: #760909;       /* DARK_RED */
+  --orange: #E4730E;         /* ORANGE */
+  --blue: #007EEC;           /* COBALT_BLUE: away games, info */
+  --blue-soft: #4790D0;      /* LIGHT_BLUE / BLUE_NEUTRAL */
+  --good: #31C778;           /* GREEN_POSITIVE */
+  --caution: #F8BF00;        /* YELLOW_CAUTION (Legacy's amber) */
+  --bad: #E60041;            /* RED_NEGATIVE */
+  --gold: #FFEA8A;           /* GOLD */
+  --glow: rgba(255, 93, 84, .22);
+
+  /* type */
+  --font: 'Titillium Web', 'Segoe UI', system-ui, sans-serif;
+  --font-head: 'Titillium Web', 'Segoe UI', system-ui, sans-serif;
+  --head-stretch: 100%;     /* normal width (the old condensed Bahnschrift was hard to read) */
+  --head-style: normal;     /* upright: NHL 19's slanted heads were hard to read */
+  --slant: -10deg;          /* the same lean for boxes and marks: transform: skewX(var(--slant)) */
+
+  /* sizes */
+  --gap: 12px;
+  --focus-bar: 3px;
+  --row-h: 32px;
+  --help-h: 40px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+}

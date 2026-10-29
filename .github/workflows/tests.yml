@@ -1,0 +1,23 @@
+# The tests on Windows. Started by hand from the Actions tab, or by pushing a tag v*. Nothing is built or attached
+# here: the exe is built on the owner's PC (packaging/build.ps1). The default roster, the NHL 27 data pack, the NHL.com
+# samples and the game files are not in git, so the tests that need them are skipped here; the others run.
+name: tests
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install pytest pytest-xdist pillow numpy certifi
+      - run: python -m pytest -q -n auto -p no:cacheprovider

@@ -1,0 +1,10 @@
+[project]
+name = "overtime"
+version = "0.0.1"
+description = "Overtime: community servers and roster app for NHL 19 on shadPS4"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = ["game: needs the user's own NHL 19 files (set OVERTIME_GAME_DIR)"]

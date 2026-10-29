@@ -1,0 +1,66 @@
+"""Draw the start-up splash (standard library only): the app's clock and "OVERTIME ROSTER / STARTING" on its
+near-black. PyInstaller's bootloader shows it while the onefile exe unpacks; the app closes it once its window shows.
+
+    python packaging/make_splash.py <out.png>
+"""
+import struct
+import sys
+import zlib
+
+import make_icon
+
+W, H = 440, 160
+LOGO = 112
+FONT = {    # 5 x 7
+    'O': ('01110', '10001', '10001', '10001', '10001', '10001', '01110'),
+    'V': ('10001', '10001', '10001', '10001', '10001', '01010', '00100'),
+    'E': ('11111', '10000', '10000', '11110', '10000', '10000', '11111'),
+    'R': ('11110', '10001', '10001', '11110', '10100', '10010', '10001'),
+    'T': ('11111', '00100', '00100', '00100', '00100', '00100', '00100'),
+    'I': ('01110', '00100', '00100', '00100', '00100', '00100', '01110'),
+    'M': ('10001', '11011', '10101', '10101', '10001', '10001', '10001'),
+    'S': ('01111', '10000', '10000', '01110', '00001', '00001', '11110'),
+    'A': ('01110', '10001', '10001', '11111', '10001', '10001', '10001'),
+    'N': ('10001', '11001', '10101', '10011', '10001', '10001', '10001'),
+    'G': ('01110', '10001', '10000', '10111', '10001', '10001', '01111'),
+    '.': ('00000', '00000', '00000', '00000', '00000', '00000', '00100'),
+    ' ': ('00000',) * 7,
+}
+
+
+def text(pixels, s, x, y, scale, colour):
+    for ch in s:
+        for j, row in enumerate(FONT[ch]):
+            for i, bit in enumerate(row):
+                if bit == '1':
+                    for dy in range(scale):
+                        for dx in range(scale):
+                            pixels[y + j * scale + dy][x + i * scale + dx] = colour
+        x += 6 * scale
+
+
+def main(out):
+    pixels = [[make_icon.BG] * W for _ in range(H)]
+    logo = make_icon.render(LOGO)      # an RGBA PNG: take its rows back out
+    raw = zlib.decompress(logo[logo.index(b'IDAT') + 4:logo.index(b'IEND') - 8])
+    stride = 1 + LOGO * 4
+    top = (H - LOGO) // 2
+    for j in range(LOGO):
+        for i in range(LOGO):
+            r, g, b, a = raw[j * stride + 1 + i * 4:j * stride + 5 + i * 4]
+            bg = make_icon.BG
+            pixels[top + j][24 + i] = tuple(round((c * a + k * (255 - a)) / 255) for c, k in zip((r, g, b), bg))
+    text(pixels, 'OVERTIME ROSTER', 156, 50, 3, make_icon.WHITE)
+    text(pixels, 'STARTING...', 156, 92, 2, make_icon.ORANGE)
+    rows = b''.join(b'\0' + bytes(c for px in row for c in px) for row in pixels)
+
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+    with open(out, 'wb') as f:
+        f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', W, H, 8, 2, 0, 0, 0))
+                + chunk(b'IDAT', zlib.compress(rows, 9)) + chunk(b'IEND', b''))
+    print(out)
+
+
+if __name__ == '__main__':
+    main(sys.argv[1])

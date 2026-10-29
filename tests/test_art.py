@@ -1,0 +1,295 @@
+"""The art layer: packs, routing into new archives per family, apply / re-apply / undo byte-exact."""
+import hashlib
+import json
+import os
+import zipfile
+
+import pytest
+
+from overtime_core import art, eb, overlay
+
+IDLE = {'running': lambda: False}
+LOGO = 'nhl/ui/kettle_assets/teamlogos/large/t22.gnf'
+NEW_LOGO = 'nhl/ui/kettle_assets/teamlogos/large/t10499.gnf'
+KIT = 'nhl/data/kettle/rendering/characters/player/jersey_adidas_arizona_home_cm.gnf'
+PORTRAIT = 'nhl/ui/kettle_assets/playerportraits/p1.gnf'
+
+
+def gnf(tag):
+    return b'GNF ' + tag.encode().ljust(60, b'.')
+
+
+def tree(top):
+    out = {}
+    for d, _dirs, files in os.walk(top):
+        for n in files:
+            with open(os.path.join(d, n), 'rb') as f:
+                out[os.path.relpath(os.path.join(d, n), top)] = hashlib.sha256(f.read()).hexdigest()
+    return out
+
+
+@pytest.fixture
+def game(tmp_path):
+    """A game folder with two archives per family: the stock logo and portrait in the UI family (the portrait in the
+    3D family too), the stock kit in the 3D family."""
+    big = tmp_path / 'NHL 19' / 'databigs'
+    big.mkdir(parents=True)
+    eb.new_archive(str(big / 'inxp_10.big'), {LOGO: gnf('stock logo'), PORTRAIT: gnf('stock face'),
+                                              'nhl/ui/kettle_assets/teamlogos/large/t1.gnf': gnf('t1')})
+    eb.new_archive(str(big / 'patch_inxp_56.big'), {'nhl/data/common/x.db': b'db'})
+    eb.new_archive(str(big / 'game_90.big'), {KIT: gnf('stock kit'), PORTRAIT: gnf('stock face 3d')})
+    eb.new_archive(str(big / 'patch_game_96.big'), {'nhl/data/y.bin': b'y'})
+    eb.new_archive(str(big / 'boot.big'), {'nhl/ui/z.lua': b'z'})
+    return str(tmp_path / 'NHL 19')
+
+
+def pack(tmp_path, name, files):
+    path = str(tmp_path / f'{name}.zip')
+    art.write_pack(path, name, files, source='test', built='2026-10-18')
+    return art.load_pack(path)
+
+
+def test_pack_round_trip_and_checks(tmp_path):
+    files = {LOGO: gnf('utah'), KIT: gnf('utah kit')}
+    p = pack(tmp_path, 'looks', files)
+    assert p.files == files and p.name == 'looks' and p.info['source'] == 'test'
+    again = str(tmp_path / 'again.zip')
+    art.write_pack(again, 'looks', dict(reversed(list(files.items()))), source='test', built='2026-10-18')
+    with open(again, 'rb') as a, open(p.path, 'rb') as b:
+        assert a.read() == b.read()  # the same files make the same zip
+    with pytest.raises(art.ArtError):
+        art.write_pack(str(tmp_path / 'bad.zip'), 'x', {'NHL/UPPER.gnf': gnf('x')})
+    with pytest.raises(art.ArtError):
+        art.write_pack(str(tmp_path / 'bad.zip'), 'x', {LOGO: b'DDS not a gnf'})
+    bad = str(tmp_path / 'tampered.zip')
+    with zipfile.ZipFile(bad, 'w') as z:
+        z.writestr(art.MANIFEST, json.dumps({'format': 1, 'files': {LOGO: '0' * 64}}))
+        z.writestr(LOGO, gnf('utah'))
+    with pytest.raises(art.ArtError, match='checksum'):
+        art.load_pack(bad)
+
+
+def test_route_into_new_archives_per_family(game):
+    files = {LOGO: gnf('utah'), NEW_LOGO: gnf('seattle'), KIT: gnf('utah kit'), PORTRAIT: gnf('face')}
+    assert art.targets(game) == {'inxp': 'databigs/patch_inxp_57.big', 'game': 'databigs/patch_game_97.big'}
+    edits, record = art.edits(game, files)
+    inxp = os.path.join(game, 'databigs', 'patch_inxp_57.big')
+    gam = os.path.join(game, 'databigs', 'patch_game_97.big')
+    assert set(edits[inxp]) == {LOGO, NEW_LOGO, PORTRAIT}  # the new logo goes where its folder is
+    assert set(edits[gam]) == {KIT, PORTRAIT}  # a texture in both families goes into both
+    assert record == {'game': {'archive': 'databigs/patch_game_97.big', 'textures': 2},
+                      'inxp': {'archive': 'databigs/patch_inxp_57.big', 'textures': 3}}
+    with pytest.raises(art.ArtError, match='unknown'):
+        art.edits(game, {'nhl/ui/kettle_assets/nowhere/t1.gnf': gnf('x')})
+    assert art.family('patch_inxp_56.big') == 'inxp' and art.family('game_90.big') == 'game'
+    assert art.family('boot.big') == 'boot'
+
+
+def test_art_layer_apply_reapply_undo_byte_exact(game, tmp_path):
+    before_game = tree(game)
+    files = {LOGO: gnf('utah'), NEW_LOGO: gnf('seattle'), KIT: gnf('utah kit')}
+    looks = pack(tmp_path, 'looks', files)
+    st = overlay.apply(game, ('art',), art=[looks], **IDLE)
+    mods = overlay.overlay_dir(game)
+    assert sorted(st['files']) == ['databigs/patch_game_97.big', 'databigs/patch_inxp_57.big']
+    assert all(r['new'] for r in st['files'].values())
+    assert st['layers']['art']['packs'][0]['name'] == 'looks' and st['layers']['art']['textures'] == 3
+    with eb.EbArchive(os.path.join(mods, 'databigs', 'patch_inxp_57.big')) as arc:
+        assert sorted(arc.entries) == sorted([LOGO, NEW_LOGO])
+        assert arc.read(NEW_LOGO) == files[NEW_LOGO]
+    with eb.EbArchive(os.path.join(mods, 'databigs', 'patch_game_97.big')) as arc:
+        assert list(arc.entries) == [KIT] and arc.read(KIT) == files[KIT]
+    assert overlay.status(game)['problems'] == []
+    served = tree(mods)
+
+    # another apply without packs keeps the served art, byte for byte
+    st2 = overlay.apply(game, ('art',), **IDLE)
+    assert tree(mods) == served and st2['layers']['art']['packs'] == st['layers']['art']['packs']
+
+    # a later pack wins on a shared path
+    faces = pack(tmp_path, 'faces', {LOGO: gnf('utah v2')})
+    overlay.apply(game, ('art',), art=[looks, faces], **IDLE)
+    with eb.EbArchive(os.path.join(mods, 'databigs', 'patch_inxp_57.big')) as arc:
+        assert arc.read(LOGO) == gnf('utah v2')
+
+    # dropping the layer removes its archives
+    overlay.apply(game, ('art',), art=[looks], **IDLE)
+    assert tree(mods) == served
+
+    assert sorted(overlay.undo(game, **IDLE)) == sorted(
+        os.path.join(mods, 'databigs', n) for n in ('patch_game_97.big', 'patch_inxp_57.big'))
+    assert not os.path.exists(mods)
+    assert tree(game) == before_game
+
+
+def test_art_layer_without_pack_is_refused(game):
+    with pytest.raises(overlay.PatchError, match='no art pack'):
+        overlay.apply(game, ('art',), **IDLE)
+
+
+def test_status_flags_a_game_archive_of_the_same_name(game, tmp_path):
+    overlay.apply(game, ('art',), art=[pack(tmp_path, 'looks', {LOGO: gnf('utah')})], **IDLE)
+    eb.new_archive(os.path.join(game, 'databigs', 'patch_inxp_57.big'), {'nhl/a.bin': b'a'})
+    assert any('has an archive of this name' in p for p in overlay.status(game)['problems'])
+    st = overlay.apply(game, ('art',), **IDLE)  # the art moves one number up
+    assert list(st['files']) == ['databigs/patch_inxp_58.big']
+    assert not os.path.exists(os.path.join(overlay.overlay_dir(game), 'databigs', 'patch_inxp_57.big'))
+    overlay.undo(game, **IDLE)
+
+
+def test_patch_switch_finds_packs_and_keeps_the_layer(game, tmp_path, monkeypatch):
+    from overtime_roster.app import patch
+    folder = tmp_path / 'packs'
+    folder.mkdir()
+    monkeypatch.setenv(patch.ART_ENV, str(folder))
+    from overtime_roster.app import packdownload  # the photos' fit to the roster: test_packdownload
+    monkeypatch.setattr(packdownload, 'photos_fit', lambda path, game_dir=None: {'fits': None})
+    assert patch.art_packs() == ([], [])
+    art.write_pack(str(folder / 'looks.zip'), 'looks', {LOGO: gnf('utah')})
+    (folder / 'looks32.zip').write_bytes(b'not a zip')
+    art.write_pack(str(folder / 'photos.zip'), 'photos', {PORTRAIT: gnf('nhl.com face'), LOGO: gnf('not this')})
+    assert patch.art_found() == ['looks32.zip', 'photos.zip', 'looks.zip']
+    packs, problems = patch.art_packs()
+    assert [p.name for p in packs] == ['photos', 'looks'] and len(problems) == 1
+    assert art.merge(packs)[LOGO] == gnf('utah')   # looks.zip is laid last, so it wins
+    assert 'art' not in patch.layers_for(game)
+    assert patch.layers_for(game, art=True)[-1] == 'art'
+    overlay.apply(game, ('art',), art=packs, **IDLE)
+    assert 'art' in patch.layers_for(game)  # served: kept
+    assert 'art' not in patch.layers_for(game, no_art=True)
+    monkeypatch.setenv(patch.ART_ENV, 'off')
+    assert patch.art_places() == []
+    overlay.undo(game, **IDLE)
+
+
+def test_kits_download_pack_has_its_own_switch(game, tmp_path, monkeypatch):
+    from overtime_roster.app import patch
+    folder = tmp_path / 'packs'
+    folder.mkdir()
+    monkeypatch.setenv(patch.ART_ENV, str(folder))
+    art.write_pack(str(folder / 'looks.zip'), 'looks', {LOGO: gnf('utah')})
+    base = gnf('stock kit')
+    art.write_pack(str(folder / 'kits.zip'), 'kits', {KIT: base[:16] + b'K' * 16 + base[32:]}, bases={KIT: base})
+    assert patch.art_found() == ['kits.zip', 'looks.zip']
+    layers = []
+    packs = patch.art_layer({'art': True}, layers, game_dir=game)
+    assert [p.name for p in packs] == ['kits', 'looks'] and layers == ['art']
+    assert [p.name for p in patch.art_layer({'art': True, 'kits': False}, [], game_dir=game)] == ['looks']
+    problems = []
+    packs = patch.art_layer({'art': True}, [], log=problems.append)   # no game folder: the delta pack is skipped
+    assert [p.name for p in packs] == ['looks'] and 'game folder' in problems[0]
+
+
+def test_art_switch_on_off_and_unpatch_byte_exact(game, tmp_path, monkeypatch):
+    from overtime_roster.app import patch
+    folder = tmp_path / 'packs'
+    folder.mkdir()
+    monkeypatch.setenv(patch.ART_ENV, str(folder))
+    before_game, layers = tree(game), ['text']
+    assert patch.art_layer({}, layers) is None and layers == ['text']  # on, no packs: nothing to add
+    assert patch.art_found() == []
+    art.write_pack(str(folder / 'looks.zip'), 'looks', {LOGO: gnf('utah'), KIT: gnf('kit')})
+    assert patch.art_found() == ['looks.zip']
+    packs = patch.art_layer({'art': True}, layers)
+    assert layers == ['text', 'art'] and [p.name for p in packs] == ['looks']
+    overlay.apply(game, ('art',), art=packs, **IDLE)
+    mods = overlay.overlay_dir(game)
+    assert os.path.isfile(os.path.join(mods, 'databigs', 'patch_inxp_57.big'))
+
+    # on without packs: the served art stays (None lets overlay keep it)
+    monkeypatch.setenv(patch.ART_ENV, str(tmp_path / 'empty'))
+    layers = ['art']
+    assert patch.art_layer({'art': True}, layers) is None and layers == ['art']
+
+    # off: the layer leaves, and Apply with the rest takes its archives away
+    layers = ['art']
+    assert patch.art_layer({'art': False}, layers) is None and layers == []
+    overlay.apply(game, ('art',), art=packs, **IDLE)
+    assert overlay.undo(game, **IDLE)
+    assert not os.path.exists(mods) and tree(game) == before_game
+
+
+class _Bios:
+    def __init__(self, rows):
+        self.rows = [dict(r) for r in rows]
+        self.count = len(self.rows)
+
+    def get(self, i, f):
+        return self.rows[i][f]
+
+    def set(self, i, f, v):
+        self.rows[i][f] = v
+
+
+def test_portrait_flags_follow_the_art_served():
+    stock = {art.BIOS: _Bios([{'game_id': 3109, 'artid': 1082, 'hasportrait': 1},
+                              {'game_id': 7, 'artid': 500, 'hasportrait': 0}])}
+    rows = [{'game_id': 3109, 'artid': 1082, 'hasportrait': 1},    # stock face, the pack's NHL.com photo over it
+            {'game_id': 7, 'artid': 500, 'hasportrait': 0},        # stock without a portrait, the pack has one
+            {'game_id': 20641, 'artid': 20641, 'hasportrait': 0},  # a new player (NEW_ARTIDS), the pack has one
+            {'game_id': 20700, 'artid': 20700, 'hasportrait': 1}]  # a new player without a photo: no flag
+    db = {art.BIOS: _Bios(rows)}
+    files = {art.PORTRAIT.format(a): b'' for a in (1082, 500, 20641)}
+    assert art.portrait_flags(db, stock, files) == 3
+    assert [r['hasportrait'] for r in db[art.BIOS].rows] == [1, 1, 1, 0]
+    assert art.portrait_flags(db, stock, files) == 0
+    # the art layer off: stock flags back, new players off
+    assert art.portrait_flags(db, stock, {}) == 2
+    assert [r['hasportrait'] for r in db[art.BIOS].rows] == [1, 0, 0, 0]
+    assert art.portrait_flags({}, stock, files) == 0  # no bio table: nothing to do
+
+
+def test_delta_pack_round_trip_and_refusals(tmp_path, game):
+    # a kit that differs from the game's in one block: stored as a delta, read back whole against the game's copy
+    base = gnf('stock kit')
+    kit = base[:16] + b'X' * 16 + base[32:]
+    path = str(tmp_path / 'kits.zip')
+    art.write_pack(path, 'kits', {KIT: kit, NEW_LOGO: gnf('sea')}, bases={KIT: base})
+    with zipfile.ZipFile(path) as z:
+        info = json.loads(z.read('pack.json'))
+        assert info['format'] == 2 and set(info['files']) == {NEW_LOGO} and set(info['deltas']) == {KIT}
+        assert KIT not in z.namelist() and len(z.read(KIT + '.delta')) == 4 + 8 + 16
+    loaded = art.load_pack(path, game)
+    assert loaded.files == {KIT: kit, NEW_LOGO: gnf('sea')} and 'deltas' not in loaded.info
+    assert art.apply_delta(base, art.make_delta(base, base)) == base
+    with pytest.raises(art.ArtError, match='game folder'):
+        art.load_pack(path)
+    # another game whose kit is not the one the pack was made on: refused
+    other = tmp_path / 'other' / 'databigs'
+    other.mkdir(parents=True)
+    eb.new_archive(str(other / 'game_90.big'), {KIT: gnf('modded kit')})
+    with pytest.raises(art.ArtError, match='not the file this pack was made on'):
+        art.load_pack(path, str(tmp_path / 'other'))
+    # a game without the file at all: refused too
+    eb.new_archive(str(other / 'game_90.big'), {'nhl/data/y.bin': b'y'})
+    with pytest.raises(art.ArtError, match='no base'):
+        art.load_pack(path, str(tmp_path / 'other'))
+    # a delta that runs past its file
+    with pytest.raises(art.ArtError, match='runs past'):
+        art.apply_delta(base, art.DELTA_MAGIC + (60).to_bytes(4, 'little') + (16).to_bytes(4, 'little') + b'Z' * 16)
+
+
+def test_photos_switch_is_a_part_with_its_own_restore(game, tmp_path, monkeypatch):
+    """Looks + photos + kits laid, photos switched off and Patch again: the same files as looks + kits laid fresh; all
+    off: the stock game, byte for byte."""
+    from overtime_roster.app import packdownload, patch
+    folder = tmp_path / 'packs'
+    folder.mkdir()
+    monkeypatch.setenv(patch.ART_ENV, str(folder))
+    monkeypatch.setattr(packdownload, 'photos_fit', lambda path, game_dir=None: {'fits': None})
+    art.write_pack(str(folder / 'looks.zip'), 'looks', {LOGO: gnf('utah')})
+    art.write_pack(str(folder / 'photos.zip'), 'photos', {PORTRAIT: gnf('nhl.com face')})
+    stock, mods = tree(game), overlay.overlay_dir(game)
+    on = patch.art_layer({'art': True}, [], game_dir=game)
+    assert [p.name for p in on] == ['photos', 'looks']
+    off = patch.art_layer({'art': True, 'photos': False}, [], game_dir=game)
+    assert [p.name for p in off] == ['looks'] and patch.art_found() == ['photos.zip', 'looks.zip']
+    overlay.apply(game, ('art',), art=on, **IDLE)
+    with_photos = tree(mods)
+    overlay.apply(game, ('art',), art=off, **IDLE)
+    after = tree(mods)
+    assert after != with_photos
+    overlay.undo(game, **IDLE)
+    overlay.apply(game, ('art',), art=off, **IDLE)
+    assert tree(mods) == after                   # the same files as a fresh patch without the photos
+    assert overlay.undo(game, **IDLE) and not os.path.exists(mods) and tree(game) == stock

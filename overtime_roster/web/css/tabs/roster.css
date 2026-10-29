@@ -1,0 +1,196 @@
+/* Roster tab. The Roster builder owns this file. The tab's rules sit under .tab-roster (the pane) and use the prefix
+   .ro- (docs/ui/CONTRACT.md). The two windows (Face & type, Equipment) are drawn at window level in #app, outside the pane, so
+   their rules sit under .modal.ro-face and .modal.ro-gear. Tokens from tokens.css, parts from app.css. */
+
+/* --- the two columns: players | the player's card ------------------------------------------------------------------ */
+.tab-roster .ro-tab { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(280px, 27vw, 340px);
+  gap: var(--gap); }
+.tab-roster .ro-tab > .card { min-height: 0; }
+.tab-roster .ro-none { flex: 1; }
+.tab-roster .ro-none-body { display: grid; place-items: center; }
+.tab-roster .ro-none-box { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+  font-size: 14px; color: var(--text-2); }
+.tab-roster .ro-none-box b { font-size: 16px; font-weight: 600; color: var(--text); }
+.tab-roster .ro-none-box .btn { margin-top: 6px; }
+
+/* --- players ----------------------------------------------------------------------------------------------------- */
+.tab-roster .ro-find { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; flex: none; min-width: 0; }
+.tab-roster .ro-search { flex: 0 1 260px; min-width: 150px; height: 32px; padding-left: 32px; background-repeat: no-repeat;
+  background-position: 11px 50%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Ccircle cx='6' cy='6' r='4.4' fill='none' stroke='%23838E96' stroke-width='1.7'/%3E%3Cpath d='M9.3 9.3 13 13' stroke='%23838E96' stroke-width='1.7'/%3E%3C/svg%3E"); }
+.tab-roster .ro-teamnote { flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--text-2); text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-roster .ro-table { padding: 0; }
+.tab-roster .ro-table .th.r { padding-right: 3px; }    /* the slanted last letter of a right-aligned head stays whole */
+.tab-roster .card-head .aside .code { margin-right: 2px; }
+.tab-roster .ro-nm { overflow: hidden; text-overflow: ellipsis; }
+.tab-roster .ro-letter { display: inline-grid; place-items: center; min-width: 16px; height: 16px; margin-left: 7px; padding: 0 3px;
+  vertical-align: 1px; font-family: var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style);
+  font-size: 11.5px; font-weight: 700; color: #0B0D10; background: var(--text-soft); }
+.tab-roster .ro-dot { display: inline-block; flex: none; width: 7px; height: 7px; margin-left: 7px; vertical-align: 1px;
+  background: var(--blue-soft); transform: skewX(var(--slant)); }
+.tab-roster .ro-copy { flex: none; margin-left: 8px; padding: 0 5px; font-size: 11px; font-weight: 400; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.tab-roster .ro-note { font-size: 12px; font-weight: 400; color: var(--blue-soft); }
+
+/* --- the player's card ------------------------------------------------------------------------------------------- */
+.tab-roster .ro-card .card-head .aside { font-size: 12px; }
+.tab-roster .ro-unsaved { color: var(--blue-soft); }
+.tab-roster .ro-card-body { display: flex; flex-direction: column; gap: 7px; }
+.tab-roster .ro-hero { display: flex; align-items: center; gap: 13px; flex: none; }
+.tab-roster .ro-ovr { flex: none; width: 60px; height: 60px; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; background: var(--tile-hi); box-shadow: inset 0 -4px 0 var(--team, var(--accent)); }
+.tab-roster .ro-ovr b { font-family: var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style);
+  font-size: 30px; line-height: 1; color: var(--text); }
+.tab-roster .ro-ovr span { font-family: var(--font-head); font-style: var(--head-style); font-weight: 700; font-size: 10.5px;
+  letter-spacing: .1em; color: var(--text-2); }
+.tab-roster .ro-who { min-width: 0; flex: 1; }
+.tab-roster .ro-sub { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-roster .ro-strong { font-size: 14px; font-weight: 600; color: var(--text); }
+.tab-roster .ro-teamline { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+.tab-roster .ro-copy-note { flex: none; margin: 0; }
+.tab-roster .ro-sum { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; flex: none; }
+.tab-roster .ro-bar { display: grid; grid-template-columns: 58px minmax(0, 1fr) 20px; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-2); }
+.tab-roster .ro-bar > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-roster .ro-bar b { text-align: right; font-size: 12.5px; color: var(--text); font-variant-numeric: tabular-nums; }
+.tab-roster .ro-track { height: 5px; background: var(--tile); }
+.tab-roster .ro-track i { display: block; height: 100%; background: linear-gradient(90deg, var(--bar), var(--accent)); }
+.tab-roster .ro-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: none; }
+.tab-roster .ro-pair { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.tab-roster .ro-later { font-size: 11.5px; color: var(--text-3); }
+.tab-roster .ro-waiting { margin: 0; }
+.tab-roster .ro-sec { flex: none; display: flex; align-items: baseline; gap: 8px; margin-top: 5px; padding-bottom: 3px;
+  font-size: 13.5px; color: var(--text); border-bottom: 1px solid var(--line-hi); }
+.tab-roster .ro-sec .faint { font-size: 12px; }
+.tab-roster .ro-form { display: flex; flex-direction: column; gap: 3px; flex: none; }
+.tab-roster .ro-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; align-items: center; column-gap: 8px;
+  font-size: 12.5px; color: var(--text-2); }
+.tab-roster .ro-lab { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; }
+.tab-roster .ro-lab .ro-dot { margin-left: 5px; }
+.tab-roster .ro-ctl { display: flex; min-width: 0; }
+.tab-roster .ro-row .field { height: 28px; padding: 0 9px; font-size: 13.5px; }
+.tab-roster .ro-row select.field { padding-right: 24px; }
+.tab-roster .ro-aside { min-width: 40px; text-align: right; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.tab-roster .ro-row .ro-problem { grid-column: 2 / -1; margin: 1px 0 3px; }
+.tab-roster .ro-problem { font-size: 12px; line-height: 1.35; color: #ff4f7b; }
+.tab-roster .ro-problem-block { flex: none; }
+.tab-roster .ro-row.bad .field, .tab-roster .ro-rt.bad .field { box-shadow: inset 0 -2px 0 var(--bad); }
+.tab-roster .ro-row.typed .field, .tab-roster .ro-row.typed .ro-seg, .tab-roster .ro-rt.typed .field {
+  box-shadow: inset 0 -2px 0 var(--caution); }
+.tab-roster .ro-seg { display: flex; width: 100%; }
+.tab-roster .ro-seg button { flex: 1; padding: 3px 4px; font-size: 12.5px; }
+.tab-roster .ro-read .ro-row { min-height: 22px; }
+.tab-roster .ro-val { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; color: var(--text-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-roster .ro-hint { margin: 0 0 2px 96px; }
+.tab-roster .ro-group { flex: none; margin-top: 3px; font-size: 12px; color: var(--text-3); }
+.tab-roster .ro-ratings { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; flex: none; }
+.tab-roster .ro-rt { display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; gap: 6px; font-size: 12px;
+  color: var(--text-2); }
+.tab-roster .ro-rt > span { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; }
+.tab-roster .ro-rt .ro-dot { margin-left: 4px; }
+.tab-roster .ro-rt .field { height: 25px; padding: 0 2px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tab-roster .ro-foot { flex-wrap: nowrap; }
+.tab-roster .ro-enter { font-size: 12px; white-space: nowrap; }
+.tab-roster .ro-tab.busy .ro-card-body { opacity: .75; }
+
+/* a narrow team pane (940x640): a narrower card; a narrow card: one column of ratings */
+@container (max-width: 860px) {
+  .tab-roster .ro-tab { grid-template-columns: minmax(0, 1fr) 264px; }
+  .tab-roster .ro-row { grid-template-columns: 78px minmax(0, 1fr) auto; }
+  .tab-roster .ro-hint { margin-left: 86px; }
+  .tab-roster .ro-sum { column-gap: 10px; }
+  .tab-roster .ro-bar { grid-template-columns: 50px minmax(0, 1fr) 18px; gap: 4px; font-size: 11.5px; }
+  .tab-roster .ro-ratings { grid-template-columns: 1fr; }
+  .tab-roster .ro-rt { grid-template-columns: minmax(0, 1fr) 44px; }
+  .tab-roster .ro-teamnote { display: none; }
+  .tab-roster .ro-enter { display: none; }
+}
+
+@media (max-height: 720px) {
+  .tab-roster .ro-find { padding: 7px 10px 6px; }
+  .tab-roster .ro-search { height: 28px; }
+  .tab-roster .ro-card-body { gap: 6px; }
+  .tab-roster .ro-ovr { width: 50px; height: 50px; }
+  .tab-roster .ro-ovr b { font-size: 25px; }
+  .tab-roster .ro-row .field { height: 26px; }
+  .tab-roster .ro-rt .field { height: 23px; }
+}
+
+/* --- the windows (drawn in #app) ---------------------------------------------------------------------------------- */
+/* both windows are as tall as what they hold (up to the whole stage), not the whole stage */
+.modal.full.ro-face, .modal.full.ro-gear { height: auto; max-height: calc(100% - 16px); }
+.modal.ro-face .m-body, .modal.ro-gear .m-body { display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.modal.ro-face .m-body > p, .modal.ro-gear .m-body > p { flex: none; margin: 0; }
+.modal.ro-face .m-body > .note, .modal.ro-gear .m-body > .note { flex: none; margin: 0; }
+.modal.ro-face .m-buttons, .modal.ro-gear .m-buttons { align-items: center; flex-wrap: wrap; }
+.modal .ro-mnote { margin-right: auto; font-size: 13px; color: var(--caution); }
+.modal.ro-face .item, .modal.ro-gear .item { width: 100%; border: 0; font: inherit; color: inherit; text-align: left; }
+.modal.ro-face .item:disabled { cursor: default; }
+.modal.ro-face .item .title, .modal.ro-face .item .sub { display: block; }
+
+/* Face & type: type | face parts | another player's face */
+/* the three columns: the types list sets the height; the long lists scroll inside it */
+.ro-face .ro-fw { flex: 0 1 470px; min-height: 0; display: grid; gap: var(--gap);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr); }
+.ro-face .ro-fcol { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; padding: 10px 12px;
+  background: rgba(255, 255, 255, .03); box-shadow: inset 0 0 0 1px var(--line); }
+.ro-face .ro-fcol > .small-note, .ro-face .ro-fcol > .note { flex: none; margin: 0; }
+.ro-face .ro-fhead { flex: none; display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text); }
+.ro-face .ro-items { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; padding-right: 4px; }
+.ro-face .ro-items .item { padding: 6px 9px; }
+.ro-face .ro-short { display: inline-grid; place-items: center; flex: none; min-width: 42px; height: 24px;
+  font-family: var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style); font-weight: 700;
+  font-size: 14px; color: var(--text); background: rgba(255, 255, 255, .08); }
+.ro-face .item.sel .ro-short { color: #fff; background: var(--accent); }
+.ro-face .ro-fform { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; padding-right: 4px; }
+.ro-face .ro-frow { display: grid; grid-template-columns: 108px minmax(0, 1fr) 76px; align-items: center; gap: 8px; flex: none;
+  font-size: 13px; color: var(--text-2); }
+.ro-face .ro-frow .field { height: 30px; font-size: 13.5px; padding-right: 26px; }
+.ro-face .ro-frow.changed .field { box-shadow: inset 0 -2px 0 var(--caution); }
+.ro-face .ro-was { display: flex; justify-content: flex-end; }
+.ro-face .ro-fsearch { flex: none; height: 32px; }
+.ro-face .ro-ftitle { flex: none; font-size: 12px; }
+.ro-face .ro-found { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; padding-right: 4px; }
+.ro-face .ro-found .item { padding: 6px 9px; }
+.ro-face .ro-head { flex: none; font-size: 12px; color: var(--text-2); }
+.ro-face .ro-head.generic { color: var(--caution); }
+
+/* Equipment: one box per choice. A list of models shows whole rows: 5 (4 when short) of 27px (25px) and 4px gaps. */
+.ro-gear .ro-eq { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-auto-rows: max-content; align-content: start; gap: 10px var(--gap); padding-right: 4px; }
+.ro-gear .ro-eq-row { display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 9px 11px;
+  background: rgba(255, 255, 255, .03); box-shadow: inset 0 0 0 1px var(--line); }
+.ro-gear .ro-eq-row.changed { box-shadow: inset 0 0 0 1px rgba(248, 191, 0, .4); }
+.ro-gear .ro-eq-head { display: flex; align-items: center; gap: 8px; font-size: 14.5px; color: var(--text); }
+.ro-gear .ro-shared { margin-left: auto; font-size: 12px; }
+.ro-gear .ro-eq-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.ro-gear .ro-eq-opt { min-width: 0; padding: 5px 10px; border: 0; font: inherit; font-size: 12.5px; text-align: left;
+  color: var(--text-soft); background: var(--tile); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ro-gear .ro-eq-opt:hover:not(:disabled) { background: var(--tile-hi); }
+.ro-gear .ro-eq-opt.on { color: var(--text); background: var(--tile-hi); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.ro-gear .ro-eq-opt.was:not(.on) { box-shadow: inset 3px 0 0 var(--text-3); }
+.ro-gear .ro-eq-opt:disabled { cursor: default; }
+.ro-gear .ro-eq-grid { flex: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); grid-auto-rows: 27px;
+  gap: 4px; max-height: 151px; align-content: start; padding-right: 4px; }
+.ro-gear .ro-eq-colour { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ro-gear .ro-swatch-big { width: 36px; height: 26px; margin-right: 4px; box-shadow: inset 0 0 0 1px var(--line-hi);
+  transform: skewX(var(--slant)); }
+.ro-gear .ro-swatch { width: 22px; height: 22px; padding: 0; border: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
+.ro-gear .ro-swatch.on { box-shadow: inset 0 0 0 2px #fff, 0 3px 0 var(--accent); }
+.ro-gear .ro-hex { flex: 0 0 96px; height: 28px; font-variant-numeric: tabular-nums; }
+.ro-gear .ro-eq-number { display: flex; align-items: center; gap: 10px; }
+.ro-gear .ro-num { flex: 0 0 90px; height: 28px; }
+
+@media (max-height: 720px) {
+  .modal.ro-face .m-body, .modal.ro-gear .m-body { gap: 8px; }
+  .ro-face .ro-frow .field { height: 27px; }
+  .ro-gear .ro-eq-grid { max-height: 112px; grid-auto-rows: 25px; }
+  .ro-gear .ro-eq-opt { padding: 4px 9px; }
+}
+@media (max-width: 1000px) {
+  .modal .ro-mnote { display: none; }
+  .ro-face .ro-frow { grid-template-columns: 94px minmax(0, 1fr) 62px; gap: 6px; }
+  .ro-face .ro-frow .field { padding-right: 20px; padding-left: 8px; }
+}

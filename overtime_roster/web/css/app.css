@@ -1,0 +1,461 @@
+/* The window: Legacy's frame and parts in NHL 19's look. Only transform and opacity animate; only the dialogs' dim
+   uses backdrop-filter, so moving and resizing the window stays cheap. Tab styles live in css/tabs/<tab>.css,
+   each under its pane's class .tab-<id> and with its own prefix (docs/ui/CONTRACT.md). */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--page); }
+body {
+  font-family: var(--font); font-size: 14px; line-height: 1.35; color: var(--text-soft);
+  -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
+}
+input, textarea, select, .selectable { user-select: text; }
+button { font: inherit; color: inherit; }
+a { color: var(--accent); text-decoration: none; cursor: pointer; }
+a:hover { color: var(--accent-hi); text-decoration: underline; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--steel); border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--text-3); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* NHL 19's heads: caps, bold, condensed, slanted. Write the text normally; this makes it caps. */
+.caps, .subhead, .card-head .title, .tabset button, .btn, .seg button, .th, .m-head, .d-head, .helpbar .key, .featured-tag,
+.field-label, .info-pop .i-title, .info-pop .i-head, .sb-mode, .rail-head {
+  font-family: var(--font-head); font-stretch: var(--head-stretch); font-weight: 700;
+  font-style: var(--head-style); text-transform: uppercase; letter-spacing: .04em;
+}
+.lean { display: inline-block; transform: skewX(var(--slant)); }
+
+#root { height: 100%; }
+.app { position: relative; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+
+/* --- the page behind everything: NHL 19's stripes and the red-orange glow at the left ---------------------------------- */
+.backdrop { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+  background:
+    radial-gradient(ellipse 34% 62% at -6% 58%, rgba(255, 93, 84, .26), rgba(215, 20, 60, .08) 55%, transparent 75%),
+    radial-gradient(ellipse 70% 55% at 50% -10%, #262836, transparent 70%),
+    var(--page); }
+.backdrop .dots { position: absolute; inset: 0; opacity: .5;
+  background-image: radial-gradient(rgba(255, 255, 255, .05) 1px, transparent 1.2px); background-size: 6px 6px;
+  -webkit-mask-image: linear-gradient(100deg, #000 0%, transparent 38%, transparent 70%, rgba(0,0,0,.6) 100%); }
+.backdrop .stripes { position: absolute; top: -10%; right: -4%; width: 34%; height: 70%;
+  background: repeating-linear-gradient(118deg, rgba(255, 255, 255, .045) 0 2px, transparent 2px 15px);
+  -webkit-mask-image: linear-gradient(200deg, #000 10%, transparent 70%); }
+.backdrop .stripes.low { top: auto; bottom: -12%; right: auto; left: -6%; width: 30%; height: 55%;
+  -webkit-mask-image: linear-gradient(20deg, #000 5%, transparent 65%); }
+.backdrop .streak { position: absolute; height: 1px; width: 340px; transform: rotate(-24deg); transform-origin: left center;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .16), transparent); }
+.backdrop .streak.s1 { right: 8%; top: 34%; }
+.backdrop .streak.s2 { right: 22%; top: 72%; width: 220px; opacity: .7; }
+.backdrop .streak.s3 { left: 12%; top: 18%; width: 180px; opacity: .5; }
+
+/* --- header: the Puck Peak logo, tagline, and the title line as NHL 19's breadcrumb ----------------------------------- */
+.header { position: relative; z-index: 1; text-align: center; padding: 14px 0 4px; flex: none; }
+.header .logo { display: block; margin: 0 auto; height: 46px; cursor: pointer; filter: drop-shadow(0 4px 10px rgba(0,0,0,.5)); }
+.header .tagline { margin-top: 5px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.header .tagline a { color: var(--accent); }
+.crumb { display: inline-flex; align-items: baseline; gap: 10px; margin-top: 8px; font-size: 12.5px; color: var(--text-3); }
+.crumb b { position: relative; color: var(--text); font-family: var(--font-head); font-stretch: var(--head-stretch);
+  font-style: var(--head-style); font-weight: 700; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; }
+.crumb .light { color: var(--text-2); font-family: var(--font-head); font-stretch: var(--head-stretch);
+  font-style: var(--head-style); font-weight: 300; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; }
+.crumb .sep { color: var(--text-off); }
+.crumb .ver { font-variant-numeric: tabular-nums; }
+/* the game's underline: dashes growing to the right, under the first word */
+.dashes { position: absolute; left: 1px; bottom: -6px; height: 3px; width: 36px;
+  background: linear-gradient(90deg, var(--accent) 0 2px, transparent 2px 6px, var(--accent) 6px 9px, transparent 9px 13px,
+    var(--accent) 13px 17px, transparent 17px 21px, var(--accent) 21px 27px, transparent 27px 30px, var(--accent) 30px 36px); }
+.compact .header { padding: 6px 0 0; }
+.compact .header .logo { height: 26px; }
+.compact .header .tagline { display: none; }
+.compact .crumb { margin-top: 4px; }
+
+/* --- tabs: [L1] Setup · Update · Game patch | Roster · ... · Front office [R1] ------------------------------------------- */
+.tabs { position: relative; z-index: 1; display: flex; justify-content: center; align-items: center; gap: 14px;
+  margin: 10px 0 12px; flex: none; }
+.tabset { position: relative; display: flex; align-items: stretch; padding: 0 2px 5px; }
+.tabset button { position: relative; z-index: 1; border: 0; background: transparent; padding: 4px 13px 3px; font-size: 15.5px;
+  letter-spacing: .1em; color: var(--text-3); cursor: pointer; white-space: nowrap; transition: color .18s var(--ease); }
+.tabset button:hover { color: var(--text-soft); }
+.tabset button.on { color: var(--accent); }
+.tabset button:nth-of-type(4) { margin-left: 15px; }
+.tabset button:nth-of-type(4)::before { content: ''; position: absolute; left: -8px; top: 6px; bottom: 6px; width: 1px;
+  background: var(--text-off); transform: skewX(var(--slant)); }
+.tabset .thumb { position: absolute; z-index: 0; bottom: 0; left: 0; height: var(--focus-bar); background: var(--accent);
+  box-shadow: 0 0 12px var(--glow); transition: transform .26s var(--ease), width .26s var(--ease); }
+@media (max-width: 1100px) {
+  .tabset button { padding: 4px 8px 3px; font-size: 14px; letter-spacing: .06em; }
+  .tabset button:nth-of-type(4) { margin-left: 11px; }
+  .tabset button:nth-of-type(4)::before { left: -6px; }
+}
+@media (max-width: 1000px) {
+  .tabs .keycap { display: none; }
+  .card-head .featured-tag { display: none; }   /* narrow: the title needs the room; the red bottom bar stays */
+}
+
+/* PS4 button glyphs as NHL 19 draws them: L1 / R1 as outlined pills, ✕ ○ D as outlined circles, white glyphs */
+.keycap { display: inline-grid; place-items: center; flex: none; min-width: 32px; height: 20px; padding: 0 7px; border-radius: 10px;
+  background: transparent; color: var(--text); font: 700 11.5px/1 var(--font); letter-spacing: 0; font-style: normal;
+  text-transform: none; box-shadow: inset 0 0 0 1.5px var(--text-soft); cursor: pointer; transition: background-color .12s; }
+.keycap.round { min-width: 20px; width: 20px; padding: 0; border-radius: 50%; font-size: 11px; }
+.keycap:hover { background: rgba(255, 255, 255, .12); }
+
+/* --- the stage holding the tabs ------------------------------------------------------------------------------------- */
+.stage { position: relative; z-index: 1; flex: 1; min-height: 0; padding: 0 16px; }
+.pane { position: absolute; inset: 0 16px; display: flex; flex-direction: column; min-height: 0; }
+.pane[hidden] { display: none; }
+.pane.enter { animation: fade-in .2s ease-out both; }
+.columns { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); }
+/* a column scrolls when its cards are taller than the window (768 lines); a .grow card takes the rest and scrolls inside */
+.col { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; overflow: hidden auto; }
+
+/* the team stage: the rail | the team tab | the Save bar under both (none on Calendar) */
+.pane.teamstage { display: grid; grid-template-columns: clamp(196px, 15vw, 240px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto; gap: 10px var(--gap); }
+.pane.teamstage[hidden] { display: none; }
+.teamstage .rail { grid-row: 1; grid-column: 1; min-height: 0; }
+.teamstage .tpanes { grid-row: 1; grid-column: 2; position: relative; min-height: 0; min-width: 0; container-type: inline-size; }
+.teamstage .savebar { grid-row: 2; grid-column: 1 / -1; }
+.teamstage.nosave .rail, .teamstage.nosave .tpanes { grid-row: 1 / -1; }
+.tpane { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+.tpane[hidden] { display: none; }
+.tpane.from-left { animation: slide-l .24s var(--ease) both; }
+.tpane.from-right { animation: slide-r .24s var(--ease) both; }
+
+/* --- cards: a panel under NHL 19's hatched header strip -------------------------------------------------------------- */
+.card { position: relative; display: flex; flex-direction: column; min-height: 0;
+  background: linear-gradient(rgba(34, 41, 50, .96), rgba(24, 29, 35, .96)); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.card.grow { flex: 1 1 0; min-height: 112px; }
+.col > .card:not(.grow) { flex: none; }
+.card-head { position: relative; display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 5px 26px 5px 12px; flex: none;
+  background:
+    repeating-linear-gradient(118deg, rgba(255, 255, 255, .09) 0 3px, transparent 3px 8px) left / 64px 100% no-repeat,
+    linear-gradient(90deg, #424852, var(--strip) 40%, #33373f);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); }
+.card-head .num { display: inline-grid; place-items: center; flex: none; min-width: 22px; height: 20px; padding: 0 5px;
+  background: var(--accent); color: #fff; font: 700 13px/1 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style);
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%); }
+.card-head .title { font-size: 15px; letter-spacing: .06em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-head .aside { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); }
+.card-body { padding: 11px 12px; min-height: 0; }
+.card-body.fill { flex: 1; display: flex; flex-direction: column; }
+.card-body.scroll { flex: 1; overflow-y: auto; }
+.card-foot { padding: 10px 12px; border-top: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: none; }
+.card.featured { box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent), 0 10px 30px rgba(0,0,0,.35); }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.list { display: flex; flex-direction: column; gap: 4px; padding-right: 4px; }
+.sp { flex: 1; }
+
+/* --- FEATURED: NHL 19's tag, accent with stripes ---------------------------------------------------------------------- */
+.featured-tag { position: relative; display: inline-flex; align-items: center; height: 18px; padding: 0 8px 0 7px; margin-right: 40px;
+  background: var(--accent); color: #fff; font-size: 12px; letter-spacing: .04em; line-height: 1; white-space: nowrap; }
+.featured-tag::after { content: ''; position: absolute; left: 100%; top: 0; bottom: 0; width: 38px;
+  background: repeating-linear-gradient(118deg, var(--accent) 0 3px, transparent 3px 7px);
+  -webkit-mask-image: linear-gradient(90deg, #000, rgba(0,0,0,.2)); }
+
+/* --- buttons: tiles with caps; focus and hover light the tile and draw the red bar --------------------------------- */
+.btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 34px; padding: 0 16px;
+  border: 0; background: var(--tile); color: var(--text); font-size: 14.5px; letter-spacing: .05em; cursor: pointer; white-space: nowrap;
+  box-shadow: inset 0 0 0 1px var(--line); transition: background-color .15s, box-shadow .15s, color .15s, transform .08s; }
+.btn:hover:not(:disabled), .btn:focus-visible { background: var(--tile-hi); outline: none;
+  box-shadow: inset 0 0 0 1px var(--line-hi), inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { color: var(--text-off); background: rgba(38, 42, 49, .6); cursor: default; }
+.btn.small { height: 26px; padding: 0 10px; font-size: 13px; }
+.btn.big { height: 42px; padding: 0 22px; font-size: 17px; }
+.btn.block { width: 100%; }
+.btn.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--line-hi); }
+.btn.primary { background: var(--accent); color: #fff; box-shadow: none; }
+.btn.primary:hover:not(:disabled), .btn.primary:focus-visible { background: var(--accent-hi);
+  box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--bar), 0 0 16px var(--glow); }
+.btn.primary:disabled { background: #3a2e33; color: #8a6f72; }
+.btn.pick { background: var(--text-soft); color: var(--black); box-shadow: none; }
+.btn.pick:hover:not(:disabled), .btn.pick:focus-visible { background: #fff; box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.btn.pick:disabled { background: rgba(38, 42, 49, .6); color: var(--text-off); }
+.btn.danger { color: #ff6b8f; box-shadow: inset 0 0 0 1px rgba(230, 0, 65, .45); }
+.btn.danger:hover:not(:disabled), .btn.danger:focus-visible { background: rgba(230, 0, 65, .16);
+  box-shadow: inset 0 0 0 1px rgba(230, 0, 65, .7), inset 0 calc(-1 * var(--focus-bar)) 0 var(--bad); }
+.btn.caution, .btn.amber { color: var(--caution); box-shadow: inset 0 0 0 1px rgba(248, 191, 0, .4); }
+/* Legacy's gold buttons are NHL 19's featured ones */
+.btn.gold, .btn.featured { background: var(--accent); color: #fff; box-shadow: none; overflow: visible; }
+.btn.gold::before, .btn.featured::before { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 34px; pointer-events: none;
+  background: repeating-linear-gradient(118deg, rgba(255, 255, 255, .28) 0 3px, transparent 3px 7px);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000); }
+.btn.gold:hover:not(:disabled), .btn.featured:hover:not(:disabled), .btn.gold:focus-visible, .btn.featured:focus-visible {
+  background: var(--accent-hi); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--bar), 0 0 18px var(--glow); }
+.btn.gold:disabled, .btn.featured:disabled { background: #3a2e33; color: #8a6f72; }
+.btn.gold:disabled::before, .btn.featured:disabled::before { display: none; }
+.btn.gold-line { color: var(--accent); box-shadow: inset 0 0 0 1px rgba(255, 93, 84, .55); }
+.btn.gold-line:hover:not(:disabled) { background: rgba(255, 93, 84, .12);
+  box-shadow: inset 0 0 0 1px var(--accent), inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.btn.gold-line:disabled { color: var(--text-off); background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+
+/* --- fields ----------------------------------------------------------------------------------------------------------- */
+.field { flex: 1; min-width: 0; display: flex; align-items: center; padding: 0 12px; height: 34px; background: var(--input);
+  border: 0; box-shadow: inset 0 0 0 1px var(--line), inset 0 -2px 0 var(--text-off); font-size: 14px; color: var(--text-soft); }
+.field.path { overflow: hidden; white-space: nowrap; }
+.field.path .head { overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.field.path .tail { flex: none; }
+.field.path.unset { color: var(--text-3); }
+input.field, textarea.field { font-family: var(--font); outline: none; transition: box-shadow .15s; }
+input.field:focus, textarea.field:focus, select.field:focus { box-shadow: inset 0 0 0 1px var(--line-hi), inset 0 -2px 0 var(--accent); outline: none; }
+input.field:disabled, select.field:disabled { color: var(--text-off); }
+input.field::placeholder { color: var(--text-3); }
+select.field { appearance: none; font-family: var(--font); padding-right: 28px; cursor: pointer;
+  background: var(--input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0h10L5 6z' fill='%23B1BAC1'/%3E%3C/svg%3E") no-repeat right 10px center; }
+select.field option { background: var(--panel); color: var(--text-soft); }
+.labelled { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field-label { font-size: 13.5px; letter-spacing: .08em; color: var(--text-2); }
+.labelled .hint { font-size: 12px; color: var(--text-3); }
+.row { display: flex; gap: 8px; align-items: center; }
+.note { margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--text-2); }
+.note.good, .good-text { color: var(--good); }
+.note.bad, .bad-text { color: #ff4f7b; }
+.note.caution, .note.amber, .caution-text { color: var(--caution); }
+.note.info { color: var(--text-2); }
+.small-note { font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+.faint { color: var(--text-3); }
+.empty { flex: 1; display: grid; place-items: center; text-align: center; color: var(--text-3); padding: 24px; }
+.empty.small { flex: none; padding: 10px; font-size: 13px; }
+
+/* pills and chips */
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; font-size: 12px; font-weight: 600;
+  color: var(--caution); box-shadow: inset 0 0 0 1px rgba(248, 191, 0, .45); background: rgba(248, 191, 0, .08); }
+.pill::before { content: ''; width: 6px; height: 6px; background: var(--caution); transform: skewX(var(--slant)); }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; height: 18px; font-size: 11.5px; font-weight: 600;
+  background: var(--tile-hi); color: var(--text-2); white-space: nowrap; }
+.chip.good { background: rgba(49, 199, 120, .16); color: var(--good); }
+.chip.bad { background: rgba(230, 0, 65, .18); color: #ff6b8f; }
+.chip.caution { background: rgba(248, 191, 0, .14); color: var(--caution); }
+.chip.info { background: rgba(0, 126, 236, .18); color: #6fb6ff; }
+.chip.accent { background: rgba(255, 93, 84, .18); color: var(--accent); }
+
+/* checkbox */
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-soft); cursor: pointer; }
+.check .box { width: 18px; height: 18px; flex: none; box-shadow: inset 0 0 0 2px var(--text-3); display: grid; place-items: center;
+  transition: background-color .15s, box-shadow .15s; }
+.check:hover .box { box-shadow: inset 0 0 0 2px var(--text-soft); }
+.check.on .box { background: var(--accent); box-shadow: none; }
+.check .box svg { width: 12px; height: 12px; opacity: 0; transform: scale(.4); transition: opacity .15s, transform .2s var(--ease); }
+.check.on .box svg { opacity: 1; transform: scale(1); }
+.check.disabled { opacity: .5; cursor: default; }
+
+/* switch: square, NHL 19's red when on */
+.toggle { position: relative; width: 44px; height: 22px; border: 0; padding: 0; flex: none; cursor: pointer;
+  background: var(--text-off); transition: background-color .2s; }
+.toggle.on { background: var(--accent); box-shadow: 0 0 10px var(--glow); }
+.toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.4); transition: transform .22s var(--ease); }
+.toggle.on::after { transform: translateX(22px); }
+.toggle:disabled { opacity: .45; cursor: default; }
+.toggle:focus-visible { outline: 2px solid var(--text); }
+.switch-row { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.switch-row.disabled { cursor: default; }
+
+/* segmented choice with a sliding bar */
+.seg { position: relative; display: inline-flex; background: var(--input); box-shadow: inset 0 0 0 1px var(--line); padding: 2px; }
+.seg button { position: relative; z-index: 1; border: 0; background: transparent; padding: 4px 13px; font-size: 14.5px; letter-spacing: .05em;
+  color: var(--text-3); cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; transition: color .18s; }
+.seg button:hover:not(:disabled) { color: var(--text-soft); }
+.seg button:disabled { cursor: default; color: var(--text-off); }
+/* the picked look is the button's own; the thumb (when measured) slides it from one pick to the next */
+.seg button.on { color: #fff; background: var(--tile-hi); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.seg button.on:disabled { color: var(--text-2); }
+.seg.has-thumb button.on { background: none; box-shadow: none; }
+.seg .thumb { position: absolute; z-index: 0; top: 2px; bottom: 2px; left: 0; background: var(--tile-hi);
+  box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); transition: transform .24s var(--ease), width .24s var(--ease); }
+.seg.disabled { opacity: .75; }           /* still readable: the pick shows what will be used */
+
+/* rows: a list of things to pick (rosters, steps, options) */
+.item { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--tile); cursor: pointer;
+  transition: background-color .12s, box-shadow .12s; }
+.item:hover { background: var(--tile-hi); }
+.item.sel, .item:focus-visible { background: var(--tile-hi); outline: none; box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.item.off { cursor: default; opacity: .7; }
+.item.off:hover { background: var(--tile); }
+.item.featured { box-shadow: inset 3px 0 0 var(--accent); }
+.item.featured.sel { box-shadow: inset 3px 0 0 var(--accent), inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.item .main { flex: 1; min-width: 0; }
+.item .title { font-size: 14.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .sub { font-size: 12.5px; color: var(--text-2); }
+
+/* --- tables: sortable heads, rows with the red focus bar ----------------------------------------------------------- */
+.tbl { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.tbl-head, .tbl-row { display: grid; grid-template-columns: var(--cols); align-items: center; column-gap: 8px; padding: 0 10px; }
+.tbl-head { flex: none; height: 30px; border-bottom: 1px solid var(--line-hi); }
+/* a small head inside a card (a unit of lines, a group of strategies, a gear tile) */
+.subhead { font-size: 14px; letter-spacing: .07em; color: var(--text-2); }
+.th { font-size: 13.5px; letter-spacing: .06em; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.th.sortable { cursor: pointer; }
+.th.sortable:hover { color: var(--text-soft); }
+.th.on { color: var(--accent); }
+.th .arrow { margin-left: 4px; font-style: normal; }
+.tbl-body { flex: 1; min-height: 0; overflow-y: auto; outline: none; }
+.tbl-row { height: var(--row-h); font-size: 13.5px; color: var(--text-soft); border-bottom: 1px solid rgba(255, 255, 255, .035); cursor: pointer; }
+.tbl-row:nth-child(even) { background: rgba(255, 255, 255, .018); }
+.tbl-row:hover { background: var(--tile); }
+.tbl-row.sel { background: var(--tile-hi); color: var(--text); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tbl-row.dim { color: var(--text-3); }
+.tbl .c { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tbl .c.r, .th.r { text-align: right; }
+.tbl .c.m, .th.m { text-align: center; }
+.tbl .c.n { font-variant-numeric: tabular-nums; }
+.tbl .c.b { font-weight: 700; color: var(--text); }
+.ovr { font-weight: 700; color: var(--text); }          /* a player's overall, the same on every tab */
+
+/* --- "?": more about a thing, while the pointer is on it ---------------------------------------------------------- */
+.info-dot { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center;
+  border: 0; box-shadow: inset 0 0 0 1.5px var(--text-3); background: transparent; color: var(--text-2);
+  font: 700 12px/1 var(--font); cursor: help; transition: background-color .15s, color .15s, box-shadow .15s; }
+.info-dot:hover, .info-dot.open, .info-dot:focus-visible { background: var(--text-soft); color: var(--black); box-shadow: none; outline: none; }
+.info-pop { position: fixed; z-index: 60; overflow-y: auto; padding: 12px 16px; background: var(--panel-deep);
+  border-top: var(--focus-bar) solid var(--accent); box-shadow: 0 16px 44px rgba(0, 0, 0, .7); color: var(--text-soft);
+  font-family: var(--font); animation: pop-in .14s var(--ease); }
+.info-pop .i-title { font-size: 15px; letter-spacing: .05em; color: var(--text); }
+.info-pop .i-head { margin: 10px 0 3px; font-size: 13.5px; letter-spacing: .06em; color: var(--text-2); break-after: avoid; }
+.info-pop.two .i-parts { columns: 2; column-gap: 26px; }
+.info-pop.three .i-parts { columns: 3; column-gap: 26px; }
+.info-pop .i-parts > .i-part:first-child .i-head { margin-top: 6px; }
+.info-pop ul { margin: 0; padding-left: 17px; }
+.info-pop li { margin: 3px 0; font-size: 13px; line-height: 1.42; break-inside: avoid; }
+.info-pop li::marker { color: var(--accent); }
+.info-pop p { margin: 6px 0 0; font-size: 13px; line-height: 1.42; }
+
+/* --- the team rail --------------------------------------------------------------------------------------------------- */
+.rail .card-head .title { font-size: 14px; }
+.rail-league { flex: none; padding: 8px 8px 6px; }
+.rail-league .field { width: 100%; height: 30px; padding-left: 8px; }
+.rlist { display: flex; flex-direction: column; gap: 1px; padding: 0 4px 8px 6px; outline: none; }
+.rteam { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px; cursor: pointer; transition: background-color .12s; }
+.rteam:hover { background: var(--tile); }
+.rteam.sel { background: var(--tile-hi); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.rteam.extra { opacity: .78; }
+.rname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; font-weight: 600; color: var(--text-2); }
+.rteam.sel .rname, .rteam:hover .rname { color: var(--text); }
+.rfarm { margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--text-3); }
+.rnum { flex: none; font-size: 12px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.rnum.good { color: var(--good); }
+.rnum.caution, .rnum.amber { color: var(--caution); }
+.rnum.bad { color: #ff4f7b; }
+.rdot { flex: none; width: 7px; height: 7px; background: var(--accent); transform: skewX(var(--slant)); box-shadow: 0 0 6px var(--glow); }
+.rsep { margin: 6px 6px 3px; font-size: 11.5px; letter-spacing: .08em; color: var(--text-3); }
+
+/* a team's code in its colours */
+.code { display: inline-grid; place-items: center; flex: none; min-width: 40px; height: 21px; padding: 0 4px 2px;
+  font: 700 13px/1 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style); letter-spacing: .06em; }
+.code.small { min-width: 34px; height: 18px; font-size: 11px; }
+
+/* --- the Save bar ------------------------------------------------------------------------------------------------- */
+.card.savebar { flex-direction: row; align-items: center; gap: 10px; padding: 7px 12px; }
+.sb-roster { min-width: 0; font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-roster b { color: var(--text); font-weight: 600; }
+.sb-roster .unsaved { color: var(--accent); font-weight: 700; }
+.savebar .name { flex: 0 1 220px; min-width: 120px; height: 32px; }
+.savebar .go { min-width: 150px; }
+.edits-list { display: flex; flex-direction: column; gap: 3px; max-height: 50vh; overflow-y: auto; }
+.edits-list .item { cursor: default; }
+.modal .edits-list { max-height: 30vh; }
+.edits-kept-title { margin: 14px 0 2px; font-size: 15px; font-weight: 600; }
+.edits-list.kept .item .main { flex: 1; min-width: 0; }
+
+/* a tab with nothing to show yet (no roster, a team it cannot show, the roster still being read): ui.js Why, one
+   centred block with a team chip, a sentence and a spinner or a button */
+.why-wrap { flex: 1; min-height: 0; display: grid; place-items: center; padding: 16px 0 40px; }
+.why { flex: none; flex-direction: column; align-items: center; gap: 14px; padding: 26px 34px; width: min(560px, 100%);
+  text-align: center; }
+.why p { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.45; }
+.why-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.spin, .spin::after { flex: none; width: 18px; height: 18px; }
+.spin { position: relative; border: 2px solid var(--line-hi); transform: skewX(var(--slant)); }
+.spin::after { content: ''; position: absolute; inset: -2px; border: 2px solid transparent; border-top-color: var(--accent);
+  animation: spin-turn .9s linear infinite; }
+@keyframes spin-turn { to { transform: rotate(360deg); } }
+
+/* --- the Help bar: progress, status, keys (NHL 19's button bar) ----------------------------------------------------- */
+.helpbar { position: relative; z-index: 4; flex: none; height: var(--help-h); margin-top: 12px; display: flex; align-items: center;
+  gap: 14px; padding: 0 16px; color: var(--text); background: rgba(8, 10, 12, .94); box-shadow: 0 -1px 0 var(--line-hi); }
+.helpbar .status { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: 600; }
+.helpbar .status.good { color: var(--good); }
+.helpbar .status.bad { color: #ff4f7b; }
+.helpbar .status.caution { color: var(--caution); }
+.helpbar .status.info { color: var(--text); }
+.helpbar .status.tip { color: var(--text-2); font-weight: 400; }
+.helpbar .pct { width: 38px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.helpbar .keys { display: flex; align-items: center; gap: 16px; }
+.helpbar .key { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; letter-spacing: .06em; cursor: pointer; color: var(--text-soft); }
+.helpbar .key:hover { color: #fff; }
+.progress { position: relative; width: 220px; height: 6px; flex: none; overflow: hidden; background: #262a31; }
+.progress .fill { position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--bar), var(--accent)); transition: transform .35s var(--ease); }
+.progress.active .fill::after { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); background-size: 60px 100%;
+  background-repeat: no-repeat; animation: shimmer 1.2s linear infinite; }
+.progress .sweep { position: absolute; top: 0; bottom: 0; width: 30%; left: 0; opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+.progress.indeterminate .sweep { opacity: 1; animation: sweep 1.1s var(--ease) infinite; }
+
+/* the Details drawer: everything the program said */
+.details { position: absolute; left: 0; right: 0; bottom: var(--help-h); z-index: 3; height: 210px; display: flex; flex-direction: column;
+  background: rgba(8, 10, 12, .97); border-top: var(--focus-bar) solid var(--accent); box-shadow: 0 -12px 30px rgba(0,0,0,.5);
+  transform: translateY(105%); transition: transform .28s var(--ease); visibility: hidden; }
+.details.open { transform: none; visibility: visible; }
+.details .d-head { display: flex; align-items: center; gap: 10px; padding: 6px 16px; font-size: 13.5px; letter-spacing: .08em;
+  color: var(--text-2); border-bottom: 1px solid var(--line); }
+.details pre { flex: 1; margin: 0; padding: 8px 16px 12px; overflow: auto; font-family: var(--font); font-size: 12.5px;
+  line-height: 1.45; color: var(--text-2); white-space: pre-wrap; user-select: text; }
+
+/* --- dialogs: the window dims and blurs behind them ------------------------------------------------------------------ */
+.modal-back { position: absolute; inset: 0 0 var(--help-h) 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 10, 12, .62); backdrop-filter: blur(5px); animation: fade-in .18s ease-out both; }
+.modal-back.full { position: fixed; inset: 0 0 var(--help-h) 0; z-index: 50; }
+.modal { width: min(560px, calc(100% - 48px)); max-height: calc(100% - 48px); display: flex; flex-direction: column;
+  background: var(--panel); box-shadow: 0 30px 80px rgba(0,0,0,.75), inset 0 var(--focus-bar) 0 var(--accent);
+  animation: pop-in .24s var(--ease) both; }
+.modal.wide { width: min(900px, calc(100% - 48px)); }
+.modal.full { width: calc(100% - 16px); height: calc(100% - 16px); max-height: none; }
+.modal.full .m-body { flex: 1; }
+.modal .m-head { flex: none; padding: 16px 22px 8px; font-size: 24px; letter-spacing: .03em; color: var(--text); }
+.modal .m-head::after { content: ''; display: block; width: 34px; height: 3px; margin-top: 7px; background: var(--accent);
+  transform: skewX(var(--slant)); }
+.modal.bad .m-head::after { background: var(--bad); }
+.modal.bad .m-head { color: #ff4f7b; }
+.modal .m-body { padding: 6px 22px 14px; font-size: 14.5px; line-height: 1.5; color: var(--text-soft); overflow: auto; min-height: 0; }
+.modal .m-body p { margin: 0 0 8px; }
+.modal .m-buttons { flex: none; display: flex; justify-content: flex-end; gap: 10px; padding: 12px 22px 18px;
+  border-top: 1px solid var(--line); background: rgba(24, 29, 35, .6); }
+
+/* a tab that did not load (a builder's error): said plainly instead of a blank pane */
+.tab-error { margin: 0; padding: 16px; color: #ff4f7b; white-space: pre-wrap; font-size: 13px; }
+
+/* --- motion ---------------------------------------------------------------------------------------------------------- */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes slide-l { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes slide-r { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes shimmer { from { background-position: -60px 0; } to { background-position: 260px 0; } }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@keyframes glow-pulse { 0%, 100% { box-shadow: 0 0 0 var(--glow); } 50% { box-shadow: 0 0 18px var(--glow); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+.still *, .still *::before, .still *::after { animation: none !important; transition: none !important; }
+
+/* --- small screens (768-line laptops, 940x640): .compact under 720 lines ---------------------------------------------- */
+@media (max-height: 720px) {
+  .tabs { margin: 5px 0 8px; }
+  .tabset button { font-size: 14px; padding-top: 2px; }
+  .card-head { min-height: 30px; padding-top: 3px; padding-bottom: 3px; }
+  .card-head .title { font-size: 14px; }
+  .card-body { padding: 8px 10px; }
+  .card-foot { padding: 7px 10px; }
+  .btn { height: 30px; }
+  .btn.big { height: 36px; font-size: 15.5px; }
+  .item { padding: 6px 9px; }
+  .helpbar { margin-top: 8px; }
+  .rteam { height: 26px; }
+  .rname { font-size: 12.5px; }
+  .code { height: 19px; min-width: 36px; font-size: 11px; }
+  .rail-league { padding: 6px 8px 4px; }
+  .rail-league .field { height: 28px; }
+  .card.savebar { padding: 4px 10px; }
+  .savebar .name { height: 28px; }
+  .tbl-row { height: 28px; }
+}

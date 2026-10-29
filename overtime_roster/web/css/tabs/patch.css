@@ -1,0 +1,105 @@
+/* Game patch tab. The Game patch builder owns this file. Rules sit under .tab-patch (the pane) and use the prefix .gp-
+   (docs/ui/CONTRACT.md); tokens from tokens.css, parts from app.css. Legacy's Game patch layout: the patch and its switches on
+   the left; what is in the game now and what the patch does on the right. */
+
+/* --- 1 Overtime game patch: the state, the three buttons, one row per switch ---------------------------------------- */
+.tab-patch .gp-main { min-height: 0; }
+.tab-patch .gp-top { flex: none; display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.tab-patch .gp-state { display: flex; align-items: flex-start; gap: 10px; font-size: 14.5px; font-weight: 600; line-height: 1.4; color: var(--text-2); }
+.tab-patch .gp-mark { flex: none; width: 12px; height: 12px; margin-top: 4px; background: var(--text-off); transform: skewX(var(--slant)); }
+.tab-patch .gp-state.good { color: var(--good); }
+.tab-patch .gp-state.good .gp-mark { background: var(--good); box-shadow: 0 0 10px rgba(49, 199, 120, .45); }
+.tab-patch .gp-state.caution { color: var(--caution); }
+.tab-patch .gp-state.caution .gp-mark { background: var(--caution); }
+.tab-patch .gp-state.bad { color: #ff4f7b; }
+.tab-patch .gp-state.bad .gp-mark { background: var(--bad); }
+.tab-patch .gp-state.info { color: var(--text); }
+.tab-patch .gp-state.info .gp-mark { background: var(--accent); animation: glow-pulse 1.2s ease-in-out infinite; }
+.tab-patch .gp-buttons { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.tab-patch .gp-patch { min-width: 170px; }
+.tab-patch .gp-play-icon { width: 10px; height: 12px; margin-right: 2px; }
+
+.tab-patch .gp-layers { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-top: 10px; }
+.tab-patch .gp-layers-head { flex: none; display: flex; align-items: baseline; gap: 12px; margin-bottom: 1px; }
+.tab-patch .gp-layer { flex: none; display: flex; align-items: center; gap: 12px; padding: 7px 12px 7px 14px; background: var(--tile);
+  box-shadow: inset 3px 0 0 var(--text-off); transition: box-shadow .15s, background-color .15s; }
+.tab-patch .gp-layer.on { box-shadow: inset 3px 0 0 var(--accent); }
+.tab-patch .gp-layer:hover { background: var(--tile-hi); }
+.tab-patch .gp-layer.off .gp-layer-title > span:first-child { color: var(--text-3); }
+.tab-patch .gp-layer.coming { background: rgba(38, 42, 49, .5); box-shadow: inset 3px 0 0 rgba(0, 126, 236, .5); }
+.tab-patch .gp-layer.coming:hover { background: rgba(38, 42, 49, .5); }
+.tab-patch .gp-layer-main { flex: 1; min-width: 0; }
+.tab-patch .gp-layer-title { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 700; line-height: 1.3; color: var(--text); }
+.tab-patch .gp-layer:not(.on) .gp-layer-title > span:first-child { color: var(--text-2); }
+.tab-patch .gp-layer-sub { font-size: 12.5px; line-height: 1.35; color: var(--text-2); }
+.tab-patch .gp-layer.off .gp-layer-sub { color: var(--caution); }
+.tab-patch .gp-layer.coming .gp-layer-sub { color: var(--text-3); }
+.tab-patch .gp-hint { flex: 1; min-width: 0; text-align: right; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-patch .gp-layer.coming .info-dot { margin-right: 56px; }
+
+/* --- 2 The Photos, logos pack (v0.10.0) --------------------------------------------------------------------------- */
+.tab-patch .gp-pack-size { font-size: 12.5px; color: var(--text-3); }
+.tab-patch .gp-pack-body { display: flex; flex-direction: column; gap: 6px; padding-left: 14px; box-shadow: inset 3px 0 0 var(--caution); }
+.tab-patch .gp-pack-body.good { box-shadow: inset 3px 0 0 var(--good); }
+.tab-patch .gp-pack-body.info { box-shadow: inset 3px 0 0 var(--accent); }
+.tab-patch .gp-pack-sub { font-size: 13px; line-height: 1.4; color: var(--text-2); }
+.tab-patch .gp-pack-state { font-size: 13.5px; font-weight: 600; line-height: 1.4; color: var(--caution); }
+.tab-patch .gp-pack-body.good .gp-pack-state { color: var(--good); }
+.tab-patch .gp-pack-body.info .gp-pack-state { color: var(--text); }
+.tab-patch .gp-pack-body .progress { width: 100%; height: 4px; background: var(--input); }
+.tab-patch .gp-pack-buttons { display: flex; gap: 8px; }
+.tab-patch .gp-pack-buttons:empty { display: none; }
+
+/* --- 3 In the game now ------------------------------------------------------------------------------------------------ */
+.tab-patch .gp-now-body { display: flex; flex-direction: column; gap: 10px; }
+.tab-patch .gp-facts { margin: 0; display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; }
+.tab-patch .gp-facts > div { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.tab-patch .gp-facts dt { font: 700 13px/1.6 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style);
+  letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.tab-patch .gp-facts dd { margin: 0; min-width: 0; color: var(--text); font-weight: 600; }
+.tab-patch .gp-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.tab-patch .gp-chips .chip { font-weight: 600; }
+.tab-patch .gp-files-line { display: flex; align-items: center; gap: 10px; }
+.tab-patch .gp-clean { margin: 0; color: var(--text-2); font-size: 14px; }
+.tab-patch .gp-problems { margin: 0; padding: 6px 10px 6px 26px; background: rgba(230, 0, 65, .1); box-shadow: inset 3px 0 0 var(--bad);
+  color: #ff6b8f; font-size: 13px; line-height: 1.45; }
+.tab-patch .gp-tool { display: flex; flex-direction: column; gap: 4px; padding-top: 9px; border-top: 1px solid var(--line); }
+.tab-patch .gp-tool-row { display: flex; align-items: center; gap: 8px; }
+
+/* --- 4 What the game patch does ---------------------------------------------------------------------------------------- */
+.tab-patch .gp-about-body { display: flex; flex-direction: column; gap: 12px; }
+.tab-patch .gp-part-head { font-size: 13.5px; letter-spacing: .08em; color: var(--accent); margin-bottom: 3px; }
+.tab-patch .gp-part ul { margin: 0; padding-left: 18px; color: var(--text-soft); font-size: 13.5px; line-height: 1.5; }
+.tab-patch .gp-part li::marker { color: var(--text-3); }
+.tab-patch .gp-names { display: grid; grid-template-columns: auto auto auto auto; justify-content: start; gap: 2px 12px; font-size: 13.5px; }
+.tab-patch .gp-name { display: contents; }
+.tab-patch .gp-arrow { color: var(--text-3); }
+
+.tab-patch .gp-empty { align-items: center; justify-content: center; gap: 14px; text-align: center; color: var(--text-2); }
+.tab-patch .gp-empty p { margin: 0; font-size: 15px; max-width: 420px; }
+
+/* --- the patch files (a dialog at window level, so not under .tab-patch) ----------------------------------------------- */
+.modal.gp-files-modal .gp-files-where { color: var(--text-2); }
+.modal.gp-files-modal .gp-files { margin: 0; padding: 0; list-style: none; }
+.modal.gp-files-modal .gp-files li { display: flex; gap: 12px; padding: 3px 4px; font-size: 13px; border-bottom: 1px solid rgba(255, 255, 255, .035); }
+.modal.gp-files-modal .gp-file-path { flex: 1; min-width: 0; color: var(--text-soft); overflow-wrap: anywhere; }
+.modal.gp-files-modal .gp-file-state { flex: none; color: var(--good); }
+.modal.gp-files-modal .gp-files li.bad .gp-file-state { color: #ff6b8f; font-weight: 700; }
+
+/* --- small screens (768-line laptops, 940x640): each switch's long line moves into its "?" --------------------------- */
+@media (max-height: 720px) {
+  .tab-patch .gp-top { gap: 7px; padding-bottom: 8px; }
+  .tab-patch .gp-state { font-size: 13.5px; }
+  .tab-patch .gp-layers { gap: 4px; padding-top: 7px; }
+  .tab-patch .gp-layer { padding: 3px 10px 3px 12px; }
+  .tab-patch .gp-layer.coming { padding-top: 5px; padding-bottom: 5px; }
+  .tab-patch .gp-layer-title { font-size: 13.5px; }
+  .tab-patch .gp-layer:not(.off) .gp-layer-sub { display: none; }
+  .tab-patch .gp-layer-sub { font-size: 12px; }
+  .tab-patch .gp-now-body { gap: 7px; }
+  .tab-patch .gp-tool { padding-top: 6px; }
+  .tab-patch .gp-facts { gap: 3px; font-size: 13px; }
+  .tab-patch .gp-about-body { gap: 8px; }
+  .tab-patch .gp-part ul { font-size: 13px; line-height: 1.4; }
+  .tab-patch .gp-tool .field { height: 30px; }
+}

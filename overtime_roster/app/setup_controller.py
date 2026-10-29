@@ -1,0 +1,1105 @@
+"""The Setup tab: where shadPS4 is and its checks, the server and the firewall, the picture packs (Downloads), this
+program's updates, and which roster you work on (rosters_ctl). docs/ui/setup.md.
+
+The one click (setup_patch, the Game patch tab's Patch) = checks -> a clean-game record (first time) -> the data
+overlay (the Game patch tab's layers, the default roster too when picked there) -> the eboot patch with the Overtime
+server address and the network settings (gamesetup.install; the 32-team switch only when the roster served has an
+active Seattle) -> status. Unpatch takes both away. The game folder is only ever read.
+
+The checks (_scan, a job): shadPS4 is the NHL19-Build (the version block in its exe), NHL 19 is CUSA11126 with update
+1.60, a ShadNet user is set up in shadPS4 (and its last run signed in, from its log), the Overtime server answers the
+game's first call (the redirector, a few seconds at most), the firewall rule, and the picture packs (packdownload).
+A shadPS4 found there is remembered (the app then opens on Update), and the game and saves folders follow it when
+the ones set are not there.
+
+`SetupController(controller)` is one of the Controller's parts (registry.py): it shares its lock, busy flag, status
+line and settings. Its slice `setup` is `view()`, with beta1's keys (snap_setup) that re/scripts/oneclick_run.py reads.
+"""
+import os
+import subprocess
+import sys
+import threading
+import time
+import urllib.error
+import webbrowser
+
+from overtime_core import overlay, rosterupdate, tdb, xmlpatch
+
+from .. import SITE, VERSION
+from . import gamesetup, jobs, launch, packdownload, patch, patch_ctl, paths, selfupdate
+from .registry import Part
+from .shell import friendly_date
+
+# Where the community release sends the game (docs/notes/remaster-recon.md: the Nucleus slots hold 22-24 chars).
+# The accounts slot (the login) gets https://ot.puckpeak.com/; nucleus_url only fills the slots the name doesn't fit.
+SERVER = {'host': 'ot.puckpeak.com', 'nucleus_url': 'https://91.98.195.150/'}
+HOST_ROOM = 29              # the game's redirector slot (xmlpatch FEATURES.redirector)
+LOGIN_ROOM = min(room for _addr, room, _v in xmlpatch.FEATURES['nucleus'].lines) - len('https:///')
+PLAY_WATCH_SECONDS = 180
+FIREWALL_WAIT = 40          # seconds Let it through... waits for the rule (Windows asks first: UAC)
+GAME_PORT = 'UDP 3659'      # the port NHL 19's online games use (docs/notes/beta-plan.md)
+LABELS = {'emulator': 'shadPS4', 'game': 'NHL 19', 'shadnet': 'ShadNet', 'network': 'Network'}
+STEPS = ('Looking at shadPS4...', 'Looking at NHL 19...', 'Asking ShadNet...', 'Asking the Overtime server...')
+# the picture packs: name -> (title, core: the one click fetches it)
+PACKS = {name: (p['title'], p['core']) for name, p in packdownload.PACKS.items()}
+KITS = patch.KITS_PACK
+WANTED = ('missing', 'newer', 'offline')    # pack states Download all fetches
+PACK_TITLE = 'Photos, logos pack'     # the four packs as one card (v0.10.0; off until downloaded)
+PACK_SUB = ('NHL 27 logos, menu jerseys, centre ice and 3D kits for all 32 teams, and NHL.com player photos. Kept on '
+            'this PC.')
+PACK_SIZE = 'about 150 MB'      # the four packs of 2026-10-21 (148 MB) when the server cannot say
+
+
+def waiting(busy):
+    """'Wait a moment: patching NHL 19 is still running.' for a job's busy text ('Patching NHL 19...')."""
+    text = str(busy).rstrip('. ')
+    if text[1:2].islower():
+        text = text[0].lower() + text[1:]
+    return f'Wait a moment: {text} is still running.'
+
+
+def patch_cache():
+    """The app's cache folder, where art packs fetched later go (patch.art_places looks there first)."""
+    return paths.app_dir('cache')
+
+
+def _megabytes(n):
+    return f'{n / 2**20:.0f} MB' if n else ''
+
+
+def local_packs(cache_dir):
+    """The packs as this PC has them, without the network: [{name, title, core, size, state ('here' | 'missing'),
+    local_size, removable}] (removable: in the cache, where downloads go)."""
+    out = []
+    for name, (title, core) in PACKS.items():
+        path = next((p for p in (os.path.join(d, name) for d in patch.art_places(cache_dir)) if os.path.isfile(p)),
+                    None)
+        local = os.path.getsize(path) if path else None
+        out.append({'name': name, 'title': title, 'core': core, 'size': None, 'state': 'here' if path else 'missing',
+                    'local_size': local, 'removable': bool(cache_dir and path
+                                                           and os.path.dirname(path) == os.path.normpath(cache_dir))})
+    return out
+
+
+def pack_status(cache_dir, game_dir=None):
+    """packdownload.status() (the published size and state of each pack: latest.json, up to 10 s; call it in a job),
+    or local_packs() when OVERTIME_ART_PACKS names the only packs folder (the patch then reads nothing else, and
+    nothing is asked of the server)."""
+    if not cache_dir or os.environ.get(patch.ART_ENV):
+        return local_packs(cache_dir)
+    return [dict(r) for r in packdownload.status(cache_dir, game_dir=game_dir)]
+
+
+def _pack_text(row):
+    kits = row['name'] == KITS
+    state, size = row['state'], _megabytes(row.get('size'))
+    if state == 'here':
+        return f"Downloaded ({_megabytes(row.get('local_size')) or 'ready'})." + (
+            ' Patch the game to put them in.' if kits else '')
+    if state == 'newer':
+        return 'A newer version is out. Download it, then patch the game again.'
+    if state == 'offline':
+        return 'Not downloaded. The Overtime server does not answer: check your internet connection.'
+    if state == 'wrong_roster':
+        return 'Made for another roster, so not used. Update Overtime Roster, then download them again.'
+    size = f' ({size})' if size else ''
+    if kits:
+        return f"Not downloaded{size}. Until then the teams wear the game's own kits."
+    return f'Not downloaded{size}. Press Download.'
+
+
+class SetupController(Part):
+    SLICES = {'setup': 'view'}
+    CALLS = {'setup_refresh': 'setup_refresh', 'setup_pick_emulator': 'pick_emulator',
+             'setup_set_emulator': 'setup_set_emulator', 'setup_set_game': 'setup_set_game',
+             'setup_emulator_page': 'setup_emulator_page', 'setup_set_server': 'setup_set_server',
+             'setup_firewall': 'setup_firewall', 'setup_kits_download': 'kits_download',
+             'setup_kits_remove': 'kits_remove', 'setup_pack_download': 'pack_download',
+             'setup_pack_remove': 'pack_remove', 'setup_packs_download_all': 'packs_download_all',
+             'setup_packs_get': 'packs_get', 'setup_packs_drop': 'packs_drop',
+             'setup_check_updates': 'check_updates', 'setup_check_updates_now': 'check_now',
+             'setup_patch': 'setup_patch', 'setup_unpatch': 'setup_unpatch', 'setup_verify': 'setup_verify',
+             'setup_copy': 'setup_copy', 'setup_play': 'setup_play'}
+    TAB = 'setup'
+
+    def __init__(self, ctl):
+        super().__init__(ctl)
+        prefs = ctl.prefs.get('setup') or {}
+        self.emulator = prefs.get('emulator') or ''
+        self.server = {**SERVER, **(prefs.get('server') or {})}
+        self.skipped = prefs.get('skipped') or ''     # "Skip this version": not offered again
+        self.server_error = None    # why the typed server address was refused
+        self.found = None  # the last look: emulators, build, games, status, network, users, firewall, server, ...
+        self.verify_result = None
+        self.copy_result = None     # the last full copy of the clean game (patch_ctl.copy)
+        self.play = None  # {'state', 'pid', 'log'} while / after Play
+        self._launching = False  # a Play click is starting the emulator (a second click must not start another)
+        self.checking = False   # a look (_scan) runs
+        self._looks = 0         # the newest look's number (an older one that ends later is dropped)
+        self.newer = None       # {version, notes} when a newer version is out (window.main's look, or Check now)
+        self.looked = False     # Check now looked in this session
+        self.packs = None       # pack_status() of the last look
+        self.dl = None          # {names, name, part, share} while packs download
+
+    # --- helpers -------------------------------------------------------------------------------------------
+    def _remember(self):
+        self.ctl.remember(setup={'emulator': self.emulator, 'skipped': self.skipped,
+                                 'server': {k: v for k, v in self.server.items() if v != SERVER.get(k)}})
+
+    def _xml(self):
+        return xmlpatch.build(self.server['host'], self.server.get('nucleus_url'))
+
+    def _wait(self):
+        """True (and the Help bar says so) while another job runs."""
+        busy = self.ctl.busy
+        if busy:
+            self.ctl.say(waiting(busy), 'caution')
+        return bool(busy)
+
+    def _job(self, busy, work, said, expected=(), rescan=True, after=None):
+        """work() in a job holding the busy flag; then said(out) -> (text, tone) for the Help bar. After it (also
+        when it failed): after(), then a new look when `rescan`."""
+        ctl = self.ctl
+        with ctl.lock:
+            if ctl.busy:
+                return None
+            ctl.busy = busy
+        ctl.say(busy, 'info', -1)
+        ctl.changed('setup', 'patch')
+
+        def end():
+            if after:
+                after()
+            if rescan:
+                self._scan()
+            else:
+                ctl.changed('setup', 'patch')
+
+        def done(out):
+            with ctl.lock:
+                ctl.busy = None
+            text, tone = said(out)
+            if text:
+                ctl.say(text, tone)
+            end()
+
+        def failed(message):
+            with ctl.lock:
+                ctl.busy = None
+            ctl.host.log(message)
+            ctl.say(message, 'bad')
+            end()
+        jobs.run(work, done, failed, expected=(gamesetup.SetupError, launch.LaunchError, overlay.PatchError,
+                                               patch.PatchFailed, xmlpatch.PatchError, OSError, ValueError) + expected)
+        return None
+
+    # --- the look ------------------------------------------------------------------------------------------
+    def _scan(self, announce=False, picked=False):
+        """Look at everything again (a job: the firewall check takes a second or two, the server a few). announce:
+        the Help bar walks through the steps and ends with the first thing still wrong (Check again, a pick);
+        picked: shadPS4 was just picked (the saves folder follows it)."""
+        ctl = self.ctl
+        with ctl.lock:
+            self._looks += 1
+            look = self._looks
+            self.checking = True
+            emulator, host, game_dir = self.emulator, self.server['host'], ctl.game_dir
+            announce = announce and not ctl.busy
+
+        def step(n):
+            if announce:
+                ctl.say(STEPS[n], 'info', (n + 1) / (len(STEPS) + 1))
+
+        def work():
+            packs, cache = {}, patch_cache()
+
+            def look_packs():           # latest.json, meanwhile (a pack look that fails keeps the last one)
+                try:
+                    packs['rows'] = pack_status(cache, game_dir)
+                except Exception as err:  # noqa: BLE001
+                    ctl.host.log(f'The picture packs could not be looked at: {err}')
+            worker = threading.Thread(target=look_packs, daemon=True, name='packs-look')
+            worker.start()
+            step(0)
+            emus = gamesetup.find_emulators()
+            emu = emulator if emulator and os.path.isfile(emulator) else (emus[0] if emus else '')
+            user = gamesetup.emu_user_dir(emu) if emu else ''
+            build = gamesetup.emulator_build(emu) if emu else None
+            step(1)
+            games = gamesetup.find_games(user, extra=[os.path.dirname(game_dir)]) if user else []
+            game = gamesetup.read_game(game_dir) if game_dir else None
+            follow = None
+            if not (game and game['ok']) and 'OVERTIME_GAME_DIR' not in os.environ:
+                ok = [g for g in games if g['ok']]
+                if ok:
+                    follow, game = ok[0]['path'], ok[0]
+            step(2)
+            users = gamesetup.shadnet_users(user) if user else []
+            log = gamesetup.shadnet_log(user) if user else None
+            try:
+                users_time = os.path.getmtime(os.path.join(user, 'users.json')) if user else None
+            except OSError:
+                users_time = None
+            firewall = gamesetup.firewall_allows(emu) if emu else None
+            step(3)
+            answers = gamesetup.server_answers(host) if emu else (None, '')
+            worker.join(15)
+            status = gamesetup.status(emu or None)
+            return {
+                'emulators': emus, 'emulator': emu, 'build': build, 'user_dir': user, 'games': games, 'game': game,
+                'follow_game': follow, 'saves': gamesetup.save_dir(user) if user else '',
+                'status': status, 'teams32': patch_ctl.installed_teams32(status),
+                'overlay': overlay.status(follow or game_dir) if game and game['ok'] else None,
+                'network': gamesetup.network_settings(user) if user else {},
+                'users': users, 'log': log, 'users_time': users_time,
+                'firewall': firewall, 'host': host, 'server': answers,
+                'running': overlay.emulator_running(),
+                'clean': gamesetup.load_clean(),
+                'packs': packs.get('rows'),
+            }
+
+        def done(found):
+            with ctl.lock:
+                if look != self._looks:
+                    return              # a newer look runs: it tells
+                self.found = found
+                self.checking = False
+                if found['packs'] is not None:
+                    self.packs = found['packs']
+                if not self.known_emulator() and found['emulator']:
+                    self.emulator = found['emulator']   # found: remembered, so the app opens on Update next time
+                    self._remember()
+            self._follow(found, picked)
+            if announce:
+                text, tone = self._outcome()
+                ctl.say(text, tone, 1)
+            ctl.changed('setup', 'app', 'patch')
+
+        def failed(message):
+            with ctl.lock:
+                if look == self._looks:
+                    self.checking = False
+            ctl.say(message, 'bad')
+            ctl.changed('setup')
+        ctl.changed('setup')
+        jobs.run(work, done, failed)
+
+    def _follow(self, found, picked):
+        """The game and saves folders follow shadPS4: NHL 19 found in its game folders when the folder set does not
+        hold it; its saves folder when the one set is not there, or shadPS4 was just picked and no roster is open.
+        OVERTIME_GAME_DIR and OVERTIME_SAVE_DIR (tests, the owner's runs) are never overruled."""
+        c = self.ctl
+        if found.get('follow_game') and callable(getattr(c, 'set_game_dir', None)):
+            c.host.log(f"NHL 19 found in {found['follow_game']}: the game folder follows shadPS4.")
+            c.set_game_dir(found['follow_game'])
+        saves, now = found.get('saves') or '', getattr(c, 'save_dir', None)
+        if not saves or now is None or 'OVERTIME_SAVE_DIR' in os.environ or not os.path.isdir(saves):
+            return
+        if os.path.normcase(os.path.normpath(saves)) == os.path.normcase(os.path.normpath(now or '.')):
+            return
+        if not os.path.isdir(now or '') or (picked and getattr(c, 'session', None) is None):
+            if callable(getattr(c, 'set_save_dir', None)):
+                c.host.log(f'Saves folder: {saves} (shadPS4\'s).')
+                c.set_save_dir(saves)
+
+    def find_at_start(self):
+        """At the app's start (rosters_ctl.start): with no shadPS4 picked yet, look for one (no network, no
+        questions), so the app knows it from now on (app.emulator_known)."""
+        if self.known_emulator():
+            return
+
+        def done(emus):
+            with self.ctl.lock:
+                if self.known_emulator() or not emus:
+                    return
+                self.emulator = emus[0]
+                self._remember()
+            self.ctl.changed('setup', 'app')
+        jobs.run(gamesetup.find_emulators, done, lambda message: None)
+
+    def _outcome(self):
+        """The Help bar's line after a look: the first thing still wrong in its tone, else what to do next."""
+        f = self.found or {}
+        checks = self._checks(f, not self.known_emulator())
+        for tone in ('bad', 'caution'):
+            bad = next((c for c in checks if c['tone'] == tone), None)
+            if bad:
+                return bad['text'], tone
+        if f.get('firewall') is False:
+            return 'Ready to play offline. To play online, let NHL 19 through the firewall (Multiplayer tab, Online card).', 'caution'
+        rosters = self.ctl.parts.get('rosters') if hasattr(self.ctl, 'parts') else None
+        if rosters is not None and rosters.open_roster() is not None:
+            return 'Everything is ready.', 'good'
+        return 'shadPS4 and NHL 19 are ready. Now pick the roster you work on.', 'good'
+
+    # --- buttons -------------------------------------------------------------------------------------------
+    def setup_refresh(self):
+        self._scan(announce=True)
+        return {'ok': True}
+
+    def setup_set_emulator(self, path):
+        path = (path or '').strip().strip('"')
+        if path and not (os.path.isfile(path) and gamesetup._is_emulator(os.path.basename(path))):
+            text = f'{os.path.basename(path) or path} is not shadPS4. Pick shadPS4.exe of the NHL19-Build.'
+            self.ctl.say(text, 'bad')
+            return {'error': text}
+        with self.ctl.lock:
+            self.emulator = path
+            self._remember()
+        if path:
+            self.ctl.host.log(f'shadPS4: {path}')
+        self._scan(announce=True, picked=True)
+        return {'ok': True}
+
+    def setup_set_game(self, path):
+        self.ctl.set_game_dir(path)
+        self._scan()
+        return {'ok': True}
+
+    def setup_set_server(self, host, nucleus_url=None):
+        """The address for a LAN or private server; empty puts back the community server."""
+        host, nucleus_url = (host or '').strip(), (nucleus_url or '').strip() or None
+        server = dict(SERVER) if host in ('', SERVER['host']) and not nucleus_url else {'host': host,
+                                                                                       'nucleus_url': nucleus_url}
+        try:
+            xmlpatch.build(server['host'], server['nucleus_url'])
+        except xmlpatch.PatchError as err:
+            text = self._server_refused(server['host'], err)
+            self.server_error = text
+            self.ctl.host.log(f'Server address refused: {err}')
+            self.ctl.say(f'Server address refused. {text}', 'bad')
+            self.ctl.changed('setup')
+            return {'error': text}
+        with self.ctl.lock:
+            changed = server != self.server
+            self.server, self.server_error = server, None
+            self._remember()
+        if changed:
+            self.ctl.host.log(f"Server: {server['host']}")
+            self.ctl.say('The Overtime server is set again. Patch the game again to use it.' if server == SERVER
+                         else f"Server set to {server['host']}. Patch the game again to use it.", 'good')
+        self.ctl.changed('setup')
+        return {'ok': True}
+
+    @staticmethod
+    def _server_refused(host, err):
+        """Why an address does not go into the game, in player words (xmlpatch says it in its own)."""
+        if not xmlpatch._HOST.match(host or '') or '--' in host:
+            return 'Use letters, digits, dots and dashes only, like ot.puckpeak.com.'
+        if len(host) > HOST_ROOM:
+            return f'That address is too long: the game holds {HOST_ROOM} characters at most.'
+        if 'Nucleus' in str(err) or 'slot' in str(err):
+            return (f'That address is too long for the game\'s sign-in: use {LOGIN_ROOM} characters at most, '
+                    'or the server\'s IP address.')
+        return 'The game cannot take that address. Use the server\'s name or IP address.'
+
+    def setup_patch(self):
+        """The one click (patch_ctl.one_click: the Game patch tab's Patch is the same)."""
+        return patch_ctl.one_click(self)
+
+    def _seattle_ready(self, database):
+        """Whether the roster the game starts from takes the 32-team switch (rosterupdate.seattle_ready): `database`
+        (the default roster just built, or None to keep the one the overlay serves); none served is the stock roster,
+        whose Seattle is empty. Without it New Season would crash with the switch on (ws8 run7a), so the patch then
+        keeps 31 teams."""
+        game_dir = self.ctl.game_dir
+        raw = database
+        if raw is None:
+            state = overlay.status(game_dir)
+            if 'database' in (state.get('layers') or {}):
+                raw = overlay._current_database(game_dir, state)
+        return raw is not None and rosterupdate.seattle_ready(tdb.Database.parse(raw, self.ctl.game.schema()))
+
+    def _default_roster(self):
+        """The verified default the exe carries (the bytes the in-game tests ran), unless Update was run in this
+        app: then the default rebuilt from it, kept in the cache for later patches (defaultdb.pick). Without a
+        verified default (a source run without the capture) it is built fresh, as before."""
+        ctl = self.ctl
+        from overtime_core import nhlcom
+        from . import defaultdb, paths, update
+        with ctl.lock:
+            gathered, season, per32, offline = ctl.upd_gathered, ctl.upd_season, ctl.upd_per32, ctl.upd_offline
+        g = gathered if gathered is not None and gathered.season == season else None
+        rebuild = (lambda: patch.updated_default(ctl.game, g, per32, log=ctl.host.log)[0]) if g is not None else None
+        database, came = defaultdb.pick(paths.app_dir('cache'), rebuild, season)
+        if database is not None:
+            ctl.host.log({'update': 'Default roster: rebuilt from the Update tab\'s data (kept for later patches).',
+                          'cache': 'Default roster: the one rebuilt after your last Update.',
+                          'embedded': 'Default roster: the verified default this version ships.'}[came])
+            return database
+        client = nhlcom.Client(cache_dir=paths.app_dir('cache'))
+        g = update.gather(client, season, paths.app_dir('cache'), fetch=update.fetch, offline=offline,
+                          log=ctl.host.log)
+        database, _rep = patch.updated_default(ctl.game, g, per32, log=ctl.host.log)
+        return database
+
+    def setup_unpatch(self):
+        return patch_ctl.one_unpatch(self)
+
+    def setup_verify(self, full=False):
+        """Compare the game folder with the clean record (made at the first patch, or now)."""
+        return patch_ctl.verify(self, full)
+
+    def setup_copy(self, dst):
+        return patch_ctl.copy(self, dst)
+
+    def setup_play(self):
+        """Play (patch_ctl.play): not patched, the Question first."""
+        return patch_ctl.play(self)
+
+    def _watch_play(self, emu, proc):
+        """Read the emulator log for a few minutes: did the patch apply, is ShadNet signed in?"""
+        end = time.monotonic() + PLAY_WATCH_SECONDS
+        while time.monotonic() < end:
+            time.sleep(5)
+            info = launch.check(emu)
+            exited = proc.poll() is not None
+            with self.ctl.lock:
+                self.play = {'state': 'ended' if exited else 'running', 'pid': proc.pid, 'log': info}
+            self.ctl.changed('setup')
+            if exited:
+                return
+
+    def setup_firewall(self):
+        """Ask Windows (UAC) to let shadPS4 in; only ever on the player's click. Then waits (a job) until the rule
+        is there, up to FIREWALL_WAIT seconds."""
+        emu = self.known_emulator()
+        if not emu or sys.platform != 'win32':
+            self.ctl.say('Pick shadPS4 first.', 'caution')
+            return {'error': 'Pick shadPS4 first.'}
+        if (self.found or {}).get('firewall') is True:
+            self.ctl.say('Windows already lets NHL 19 through.', 'good')
+            return {'ok': True}
+        if self._wait():
+            return None
+        import ctypes
+        args = subprocess.list2cmdline(gamesetup.firewall_rule_args(emu))
+        rc = ctypes.windll.shell32.ShellExecuteW(None, 'runas', 'netsh', args, None, 0)
+        if rc <= 32:
+            self.ctl.say('Windows did not add the rule (the question was answered No). Press Let it through... '
+                         'again and answer Yes.', 'caution')
+            return {'ok': False}
+
+        def work():
+            end = time.monotonic() + FIREWALL_WAIT
+            while time.monotonic() < end:
+                if gamesetup.firewall_allows(emu):
+                    return True
+                time.sleep(2)
+            return False
+        self._job('Letting NHL 19 through the firewall...', work,
+                  lambda ok: ('Windows lets NHL 19 through now. Online games can connect.', 'good') if ok else
+                  ('NHL 19 is not let through yet. Press Let it through... again and answer Yes when Windows asks.',
+                   'caution'))
+        return {'ok': True}
+
+    def setup_emulator_page(self):
+        webbrowser.open(gamesetup.EMULATOR_URL)
+        self.ctl.say('Opened the NHL19-Build page in your web browser.', 'info')
+        return {'ok': True}
+
+    # --- shadPS4 ---------------------------------------------------------------------------------------------------
+    def known_emulator(self):
+        """The shadPS4.exe picked (or found), when it is still there; '' before the first pick."""
+        return self.emulator if self.emulator and os.path.isfile(self.emulator) else ''
+
+    def pick_emulator(self):
+        """Windows' file picker for shadPS4.exe, then as setup_set_emulator. {type: true} in browser mode (no window
+        to show it in: the page asks for the path instead)."""
+        if self._wait():
+            return None
+        pick = getattr(self.ctl.host, 'pick', None)
+        start = os.path.dirname(self.emulator) if self.emulator else ''
+        path = pick(False, start, ('shadPS4 (*.exe)',)) if pick else None
+        if path is None:
+            return {'type': True}
+        if not path:
+            return {'cancelled': True}
+        return self.setup_set_emulator(path)
+
+    # --- Downloads: the picture packs --------------------------------------------------------------------------------
+    def _pack_row(self, name):
+        rows = self.packs if self.packs is not None else local_packs(patch_cache())
+        return next((r for r in rows if r['name'] == name), None)
+
+    def pack_download(self, name):
+        """Download one pack into the cache (a job; the Help bar and its row show how far)."""
+        if name not in PACKS:
+            return {'error': 'Overtime Roster does not know this pack.'}
+        return self._download([name])
+
+    def packs_download_all(self):
+        """Download every pack this PC lacks, or has an older version of (a job)."""
+        with self.ctl.lock:
+            rows = self.packs if self.packs is not None else local_packs(patch_cache())
+            names = [r['name'] for r in rows if r['state'] in WANTED]
+        if not names:
+            self.ctl.say('Every pack is downloaded already.', 'good')
+            return None
+        return self._download(names)
+
+    def kits_download(self):
+        return self.pack_download(KITS)
+
+    def _download(self, names, busy=None, after_ok=None):
+        c = self.ctl
+        if not self.known_emulator():
+            text = 'Pick shadPS4 first: the packs go in when you patch the game.'
+            c.say(text, 'caution')
+            return {'error': text}
+        if self._wait():
+            return None
+        titles = PACKS
+        cache, game_dir = patch_cache(), c.game_dir
+        with c.lock:
+            self.dl = {'names': list(names), 'name': names[0], 'part': 0.0, 'share': 0.0}
+
+        def progress(name, done, total):
+            part = min(1.0, done / total) if total else 0.0
+            share = (names.index(name) + part) / len(names) if name in names else part
+            with c.lock:
+                self.dl = {'names': list(names), 'name': name, 'part': part, 'share': share}
+            c.say(f'Downloading {titles.get(name, (name,))[0]}... {round(part * 100)} %', 'info', share)
+            c.changed('setup')
+
+        def work():
+            results = packdownload.download(names, cache, progress=progress, game_dir=game_dir)
+            return results, pack_status(cache, game_dir)
+
+        def said(out):
+            results, rows = out
+            with c.lock:
+                self.packs = rows
+            for name, ok, message in results:
+                c.host.log(f"{name}: {'downloaded' if ok else 'not downloaded'} ({message})")
+            if after_ok is not None and all(ok for _n, ok, _m in results):
+                return after_ok()
+            return self._summary(results, titles)
+
+        def after():
+            with c.lock:
+                self.dl = None
+        busy = busy or ('Downloading the picture packs...' if len(names) > 1 else
+                        f'Downloading {titles.get(names[0], (names[0],))[0]}...')
+        return self._job(busy, work, said, rescan=False, after=after)
+
+    @staticmethod
+    def _summary(results, titles):
+        failed = [(titles.get(n, (n,))[0], msg) for n, ok, msg in results if not ok]
+        if not failed:
+            if all(msg == 'Already downloaded.' for _n, _ok, msg in results):
+                return 'Every pack is downloaded already.', 'good'
+            got = ', '.join(titles.get(n, (n,))[0] for n, _ok, _m in results)
+            return f'Downloaded: {got}. Patch the game again to put them in.', 'good'
+        title, why = failed[0]
+        more = f' ({len(failed) - 1} more not downloaded.)' if len(failed) > 1 else ''
+        return f'{title}: {why}{more}', 'bad' if len(failed) == len(results) else 'caution'
+
+    def pack_remove(self, name):
+        """Asks first; Delete then takes the pack out of the cache (a job)."""
+        c = self.ctl
+        row = self._pack_row(name)
+        title = PACKS.get(name, (name,))[0]
+        if row is None or not row.get('removable'):
+            c.say(f'{title}: nothing downloaded to delete.', 'info')
+            return None
+        if self._wait():
+            return None
+        size = _megabytes(row.get('local_size'))
+        size = f' ({size})' if size else ''
+        if name == KITS:
+            question = ('Delete the downloaded kits?', [f'The {title} are taken off this PC{size}.',
+                                                       'Patch the game again to take them out of NHL 19 too. You can '
+                                                       'download them again any time.'],
+                        [('Delete the kits', 'delete', 'danger'), ('Keep them', 'keep', 'plain')])
+        else:
+            question = (f'Delete "{title}"?', [f'The pack is taken off this PC{size}.',
+                                               'Patch the game again to take it out of NHL 19 too. You can download '
+                                               'it again any time.'],
+                        [('Delete it', 'delete', 'danger'), ('Keep it', 'keep', 'plain')])
+        c.shell.ask(*question, {'delete': lambda: self._remove(name, title)})
+        return None
+
+    def kits_remove(self):
+        return self.pack_remove(KITS)
+
+    def _remove(self, name, title):
+        cache, game_dir = patch_cache(), self.ctl.game_dir
+
+        def work():
+            had = packdownload.remove(name, cache)
+            return had, pack_status(cache, game_dir)
+
+        def said(out):
+            had, rows = out
+            with self.ctl.lock:
+                self.packs = rows
+            if not had:
+                return f'{title}: nothing downloaded to delete.', 'info'
+            if name == KITS:
+                return 'The kits are deleted. Patch the game again to take them out.', 'good'
+            return f'{title} is deleted. Patch the game again to take it out.', 'good'
+        return self._job(f'Deleting {title}...', work, said, expected=(packdownload.PackError,), rescan=False)
+
+    # --- The Photos, logos pack (v0.10.0): the four picture packs as one card on Game patch ---------------------------
+    def _pack_rows(self):
+        return self.packs if self.packs is not None else local_packs(patch_cache())
+
+    def pack_card(self, emulator):
+        """The Photos, logos pack card (Game patch): the four packs as one, with the share done while they download."""
+        c = self.ctl
+        rows = self._pack_rows()
+        states = {r['name']: r['state'] for r in rows}
+        wanted = [r['name'] for r in rows if r['state'] in WANTED]
+        removable = [r['name'] for r in rows if r.get('removable')]
+        here = all(state == 'here' for state in states.values())
+        if here:
+            size = _megabytes(sum(r.get('local_size') or 0 for r in rows))
+        else:
+            size = _megabytes(sum(r.get('size') or 0 for r in rows if r['name'] in wanted)) or PACK_SIZE
+        card = {'title': PACK_TITLE, 'sub': PACK_SUB, 'size': size, 'progress': None, 'state': 'missing',
+                'tone': 'caution', 'can_download': bool(emulator and wanted) and not c.busy,
+                'can_remove': bool(removable) and not c.busy, 'download_text': 'Download'}
+        dl = self.dl
+        if dl is not None and c.busy:
+            card.update(state='downloading', tone='info', progress=dl['share'], can_download=False, can_remove=False,
+                        text=f"Downloading... {round(dl['share'] * 100)} %")
+        elif here:
+            card.update(state='here', tone='good', text=f'Downloaded ({size}). Press Patch to put it in the game.'
+                        if size else 'Downloaded. Press Patch to put it in the game.')
+        elif any(state == 'newer' for state in states.values()):
+            card.update(state='newer', tone='info', download_text='Download the new version',
+                        text='A newer version is out. Download it, then patch the game again.')
+        elif any(state == 'offline' for state in states.values()):
+            card.update(state='offline', text='Not downloaded. The Overtime server does not answer: check your '
+                                              'internet connection.')
+        elif not wanted:    # what is missing cannot be had now (not offered yet, photos for another roster)
+            row = next(r for r in rows if r['state'] != 'here')
+            card.update(state=row['state'], text=row.get('text') or _pack_text(row))
+        elif any(state == 'here' for state in states.values()):
+            got = sum(1 for state in states.values() if state == 'here')
+            rest = _megabytes(sum(r.get('size') or 0 for r in rows if r['name'] in wanted))
+            card.update(state='partial', size=rest, download_text='Download the rest',
+                        text=f"{got} of {len(rows)} packs downloaded. Download the rest{f' ({rest})' if rest else ''}.")
+        else:
+            card.update(text=f'Not downloaded ({size}). {patch_ctl.NO_PACK}')
+        if not emulator and card['state'] not in ('here', 'downloading'):
+            card['text'] = 'Pick shadPS4 in Setup first: the pack goes in when you patch the game.'
+        return card
+
+    def _packs_switch(self, on):
+        """The pack switches on (each that can be: the photos need the default roster) or off, remembered."""
+        c = self.ctl
+        found = patch_ctl.packs_here(patch_cache())
+        with c.lock:
+            for key in patch_ctl.PACK_KEYS:     # art first: the photos and the kits need it
+                c.patch_want[key] = bool(on) and not patch_ctl.why(dict(c.patch_want, **{key: True}), key, found)
+            c.remember(patch=dict(c.patch_want))
+        c.changed('patch')
+
+    def packs_get(self):
+        """Download the Photos, logos pack (every pack missing or older; a job), then switch art, photos and kits on."""
+        def switched():
+            self._packs_switch(True)
+            return f'{PACK_TITLE} downloaded and switched on. Press Patch to put it in the game.', 'good'
+        with self.ctl.lock:
+            rows = self._pack_rows()
+            names = [r['name'] for r in rows if r['state'] in WANTED]
+        if not names:
+            if all(r['state'] == 'here' for r in rows):
+                text, tone = switched()
+                self.ctl.say(text, tone)
+            else:
+                self.ctl.say('The pack cannot be downloaded now. Try again later.', 'caution')
+            return None
+        return self._download(names, busy=f'Downloading the {PACK_TITLE}...', after_ok=switched)
+
+    def packs_drop(self):
+        """Asks first; Delete then takes the four packs out of the cache (a job) and switches art, photos, kits off."""
+        c = self.ctl
+        rows = [r for r in self._pack_rows() if r.get('removable')]
+        if not rows:
+            self._packs_switch(False)
+            c.say(f'{PACK_TITLE}: nothing downloaded to delete.', 'info')
+            return None
+        if self._wait():
+            return None
+        size = _megabytes(sum(r.get('local_size') or 0 for r in rows))
+        size = f' ({size})' if size else ''
+        c.shell.ask(f'Delete the {PACK_TITLE}?',
+                    [f'The NHL 27 team art, kits and player photos are taken off this PC{size}.',
+                     'Patch the game again to take them out of NHL 19 too. You can download the pack again any time.'],
+                    [('Delete it', 'delete', 'danger'), ('Keep it', 'keep', 'plain')],
+                    {'delete': lambda: self._drop([r['name'] for r in rows])})
+        return None
+
+    def _drop(self, names):
+        cache, game_dir = patch_cache(), self.ctl.game_dir
+
+        def work():
+            had = [name for name in names if packdownload.remove(name, cache)]
+            return had, pack_status(cache, game_dir)
+
+        def said(out):
+            _had, rows = out
+            with self.ctl.lock:
+                self.packs = rows
+            self._packs_switch(False)
+            return f'The {PACK_TITLE} is deleted. Patch the game again to take it out.', 'good'
+        return self._job(f'Deleting the {PACK_TITLE}...', work, said, expected=(packdownload.PackError,), rescan=False)
+
+    # --- This program --------------------------------------------------------------------------------------------
+    def check_updates(self, on):
+        """Look for a newer version at every start, or not (selfupdate.json, read by window.main's update ticks)."""
+        selfupdate.set_check_updates(bool(on))
+        self.ctl.say('The program looks for a newer version every time it starts.' if on else
+                     'The program no longer looks by itself. Press Check now to look.', 'info')
+        self.ctl.changed('setup')
+        return {'ok': True}
+
+    def check_now(self):
+        """Look now (a job), then ask: the newest version, or "Version X is out" (Update now, Later, Skip this
+        version). A version skipped before is offered here too: the player asked."""
+        c = self.ctl
+        with c.lock:
+            if c.busy:
+                busy = c.busy
+            else:
+                busy = None
+                c.busy = 'Looking for a newer version...'
+        if busy:
+            c.say(waiting(busy), 'caution')
+            return None
+        c.say(c.busy, 'info', -1)
+        c.changed('setup')
+
+        def work():
+            seen = []
+
+            def fetch(url):
+                try:
+                    return selfupdate.http_text(url, timeout=15)
+                except urllib.error.HTTPError:
+                    seen.append('answered')     # the server answered: nothing published there
+                    raise
+                except Exception:
+                    seen.append('offline')
+                    raise
+            release = selfupdate.latest(fetch_text=fetch)
+            offline = release is None and seen[:1] == ['offline']
+            if not offline:
+                selfupdate.mark_checked()
+            return release, offline
+
+        def done(out):
+            release, offline = out
+            with c.lock:
+                c.busy = None
+                self.looked = not offline
+                if release is not None:
+                    self.newer = {'version': release.text, 'notes': self._notes(release)}
+            c.say('Done looking.', 'info')
+            c.changed('setup')
+            if release is not None:
+                self._ask_newer(release)
+            elif offline:
+                c.shell.ask('The program could not look', [
+                    'The Overtime server does not answer.', 'Check your internet, then press Check now again.'],
+                    [('OK', 'ok', 'plain')])
+            else:
+                c.shell.ask('You have the newest version', [
+                    f'Version {VERSION} is the latest one.',
+                    'If you are offline, the program cannot look: try again in a moment.'], [('OK', 'ok', 'plain')])
+
+        def failed(message):
+            with c.lock:
+                c.busy = None
+            c.say(message, 'bad')
+            c.changed('setup')
+        jobs.run(work, done, failed)
+        return None
+
+    @staticmethod
+    def _notes(release):
+        lines = [x.strip(' -*\t') for x in (release.notes or '').splitlines()]
+        return [x[:200] for x in lines if x][:4]
+
+    def _ask_newer(self, release):
+        c = self.ctl
+        can = bool(selfupdate.running_exe()) and release.can_install()
+        lines = [f'You have version {VERSION}.', *self._notes(release),
+                 'The program downloads the new version, restarts and keeps all your settings and rosters.' if can
+                 else 'This copy cannot replace itself: get the new version from the Overtime page.']
+        first = ('Update now', 'update', 'primary') if can else ('Open the page', 'page', 'primary')
+        c.shell.ask(f'Version {release.text} is out', lines,
+                    [first, ('Later', 'later', 'plain'), ('Skip this version', 'skip', 'plain')],
+                    {'update': lambda: self._update(release), 'skip': lambda: self._skip(release.text),
+                     'page': lambda: webbrowser.open(release.page or SITE)})
+
+    def _skip(self, version):
+        with self.ctl.lock:
+            self.skipped = version
+            self._remember()
+        self.ctl.say(f'Skipped version {version}. The program tells you again when the next one is out.', 'info')
+        self.ctl.changed('setup')
+
+    def _update(self, release):
+        c = self.ctl
+        if overlay.emulator_running():
+            c.shell.ask('Close shadPS4 first', ['The program cannot update while shadPS4 runs.',
+                                               'Close shadPS4, then press Check now again.'], [('OK', 'ok', 'plain')])
+            return None
+        return c.shell.ask_unsaved('update the program', go=lambda: self._install(release))
+
+    def _install(self, release):
+        c = self.ctl
+        version = release.text
+
+        def work():
+            def progress(share):
+                c.say(f'Downloading version {version}... {round(share * 100)} %', 'info', share)
+            return selfupdate.install(release, progress=progress)
+
+        def quit_now():
+            closing = getattr(c, 'quit', None)      # window.main's Quit (Needs from the integrator)
+            if callable(closing):
+                closing()
+            elif selfupdate.running_exe():
+                os._exit(0)                         # the new exe is starting: this one goes
+
+        def said(_exe):
+            threading.Timer(1.5, quit_now).start()  # the Help bar shows the line first
+            return f'Version {version} is ready. The program restarts with it.', 'good'
+        return self._job(f'Updating the program to {version}...', work, said, expected=(selfupdate.Refused,),
+                         rescan=False)
+
+    # --- the slice -----------------------------------------------------------------------------------------
+    def snap_setup(self):
+        with self.ctl.lock:
+            f = self.found or {}
+            st = f.get('status') or {}
+            game = f.get('game') or {}
+            ov = f.get('overlay') or {}
+            clean = f.get('clean')
+            return {
+                'scanned': self.found is not None, 'busy': bool(self.ctl.busy), 'running': bool(f.get('running')),
+                'emulator': self.emulator or f.get('emulator') or '', 'emulators': f.get('emulators') or [],
+                'emulator_url': gamesetup.EMULATOR_URL, 'user_dir': f.get('user_dir') or '',
+                'game_dir': self.ctl.game_dir, 'game_ok': bool(game.get('ok')), 'game_problem': game.get('problem'),
+                'games': [g['path'] for g in f.get('games') or []],
+                'installed': bool(st.get('installed')), 'intact': bool(st.get('intact')),
+                'problems': list(st.get('problems') or []) + list(ov.get('problems') or []),
+                'targets': st.get('targets'), 'layers': sorted((ov.get('layers') or {}).keys()),
+                'data_patched': bool(ov.get('applied')),
+                'network': f.get('network') or {}, 'network_ok': all(
+                    (f.get('network') or {}).get(k) == v for k, v in gamesetup.NETWORK.items()),
+                'users': f.get('users') or [], 'firewall': f.get('firewall'),
+                'server': dict(self.server), 'server_default': self.server == SERVER,
+                'clean': {'made': clean.get('made'), 'full': clean.get('full')} if clean else None,
+                'verify': self.verify_result, 'play': self.play,
+            }
+
+    # --- the new slice (docs/ui/setup.md) ----------------------------------------------------------------------------
+    def _checks(self, f, first):
+        """The four tiles: shadPS4, NHL 19, ShadNet, Network (from the last look, `found`)."""
+        def tile(key, value, tone, text):
+            return {'key': key, 'label': LABELS[key], 'value': value, 'tone': tone, 'text': text}
+        if first:
+            return [tile(k, 'Not checked', '', 'Pick shadPS4 first.') for k in LABELS]
+        if self.checking or self.found is None:
+            return [tile(k, 'Checking...', '', 'Checking...') for k in LABELS]
+        return [self._emulator_tile(f, tile), self._game_tile(f, tile), self._shadnet_tile(f, tile),
+                self._network_tile(f, tile)]
+
+    @staticmethod
+    def _emulator_tile(f, tile):
+        build = f.get('build')
+        if build and not build['nhl19']:
+            return tile('emulator', 'Other build', 'bad',
+                        f"This shadPS4 ({build['branch']}) cannot play NHL 19 online. Get the NHL19-Build, then "
+                        'pick it.')
+        if f.get('running'):
+            return tile('emulator', 'Running', 'caution',
+                        'shadPS4 is running. Close it before you save or delete a roster.')
+        if build is None:
+            return tile('emulator', 'Unknown build', 'caution',
+                        'This shadPS4 does not say which build it is. NHL 19 plays online only with the '
+                        'NHL19-Build: get it if online games do not start.')
+        return tile('emulator', gamesetup.BUILD_BRANCH, 'good',
+                    f"Found. This build can play NHL 19 online (shadPS4 {build['version']}, {build['rev'][:7]}).")
+
+    @staticmethod
+    def _game_tile(f, tile):
+        game = f.get('game') or {}
+        version = (game.get('app_ver') or '').lstrip('0') or '?'
+        needed = gamesetup.APP_VER.lstrip('0')
+        if game.get('ok'):
+            return tile('game', f"{version} · {game['title_id']}", 'good',
+                        f"NHL 19 ({game['title_id']}) with update {version}.")
+        if game.get('title_id') == gamesetup.TITLE_ID and game.get('app_ver') != gamesetup.APP_VER:
+            return tile('game', f'Version {version}', 'bad',
+                        f'NHL 19 is version {version}. Install update {needed} in shadPS4, then check again.')
+        if game.get('title_id') == gamesetup.TITLE_ID:
+            return tile('game', 'Not complete', 'bad',
+                        'NHL 19 is not complete. Install it again in shadPS4, then check again.')
+        return tile('game', 'Not found', 'bad', 'NHL 19 was not found. Install it in shadPS4, then check again.')
+
+    @staticmethod
+    def _shadnet_tile(f, tile):
+        """As deep as shadPS4's files go: users.json (ShadNet on, an Online ID, a password filled in) and its log
+        of the last run (signed in, or refused). The tooltip says what was checked."""
+        on = [u for u in f.get('users') or [] if u.get('shadnet')]
+        if not on:
+            return tile('shadnet', 'Not signed in', 'caution',
+                        'Sign in to ShadNet in shadPS4 to play online, then check again.')
+        user = on[0]
+        who = user.get('npid') or user.get('name') or 'you'
+        if not user.get('npid') or not user.get('password', True):
+            return tile('shadnet', 'Not signed in', 'caution',
+                        'ShadNet is on, but the Online ID or password is missing. Fill them in under Manage Users '
+                        'in the shadPS4 launcher, then check again.')
+        log = f.get('log') or {}
+        fresh = log.get('when') is not None and (f.get('users_time') is None or log['when'] >= f['users_time'])
+        when = friendly_date(log['when']) if log.get('when') else ''
+        if fresh and log.get('state') == 'rejected':
+            return tile('shadnet', 'Sign-in refused', 'bad',
+                        f'ShadNet refused the sign-in when shadPS4 last ran ({when}). Check the Online ID (capitals '
+                        'count) and the password under Manage Users in the shadPS4 launcher, then check again.')
+        if fresh and log.get('state') == 'signed_in':
+            return tile('shadnet', who, 'good', f'Signed in to ShadNet as {who}. Checked: the shadPS4 settings, '
+                                                f'and its last run signed in ({when}).')
+        return tile('shadnet', who, 'good', f'Signed in to ShadNet as {who}. Checked: the shadPS4 settings (ShadNet '
+                                            'on, Online ID and password set); the sign-in itself shows when the game '
+                                            'starts.')
+
+    def _network_tile(self, f, tile):
+        ok, why = f.get('server') or (None, '')
+        host = f.get('host') or self.server['host']
+        if ok:
+            return tile('network', 'Server answers', 'good', f'The Overtime server ({host}) answers.')
+        if host != SERVER['host']:
+            return tile('network', 'No answer', 'bad', f'The server you set ({host}) does not answer. Check the '
+                                                       'address under Online, then check again.')
+        return tile('network', 'No answer', 'bad', 'The Overtime server does not answer. Check your internet, then '
+                                                   'check again.')
+
+    def _state(self, first, checks, firewall, roster_open):
+        """The line under the tiles: what is wrong, or what to do next."""
+        if first:
+            return {'tone': 'info', 'get': True,
+                    'text': 'Pick shadPS4.exe of the NHL19-Build. NHL 19 and your rosters are found from there.'}
+        if self.checking or self.found is None:
+            return {'tone': 'info', 'text': 'Checking shadPS4, NHL 19, ShadNet and the Overtime server...',
+                    'get': False}
+        for tone in ('bad', 'caution'):
+            bad = next((c for c in checks if c['tone'] == tone), None)
+            if bad:
+                return {'tone': tone, 'text': bad['text'],
+                        'get': bad['key'] == 'emulator' and bad['value'] in ('Other build', 'Unknown build')}
+        wall = ' To play online, let NHL 19 through the firewall (Multiplayer tab).' if firewall is False else ''
+        if not roster_open:
+            return {'tone': 'caution' if wall else 'good', 'text': f'Ready. Now pick the roster you work on.{wall}',
+                    'get': False}
+        if wall:
+            return {'tone': 'caution', 'text': f'Ready to play offline.{wall}', 'get': False}
+        return {'tone': 'good', 'text': 'Everything is ready. Go to Update or patch the game.', 'get': False}
+
+    @staticmethod
+    def _firewall(emulator, allows):
+        if not emulator:
+            return {'tone': '', 'text': 'Pick shadPS4 first.', 'can_fix': False}
+        if allows is True:
+            return {'tone': 'good', 'text': f'Windows lets NHL 19 through ({GAME_PORT}).', 'can_fix': False}
+        if allows is False:
+            return {'tone': 'caution', 'text': f'Not let through yet ({GAME_PORT}).', 'can_fix': True}
+        return {'tone': '', 'text': f'Not known ({GAME_PORT}).', 'can_fix': True}
+
+    def _downloads(self, emulator):
+        """Downloads: one row per pack, and Download all."""
+        c = self.ctl
+        rows = self.packs if self.packs is not None else local_packs(patch_cache())
+        dl = self.dl
+        part = c.parts.get('patch') if hasattr(c, 'parts') else None
+        beta1 = part.kits_progress if part is not None and c.busy == getattr(part, 'KITS_BUSY', None) else None
+        out = []
+        for r in rows:
+            name, size = r['name'], _megabytes(r.get('size') or r.get('local_size'))
+            row = {'name': name, 'title': r.get('title') or PACKS.get(name, (name,))[0], 'core': bool(r.get('core')),
+                   'size': size, 'state': r['state'], 'progress': None, 'can_remove': bool(r.get('removable')),
+                   'can_download': r['state'] in WANTED and bool(emulator),
+                   'tone': {'here': 'good', 'newer': 'info'}.get(r['state'], 'caution'),
+                   'text': r.get('text') or _pack_text(r)}
+            turn = dl['names'].index(name) - dl['names'].index(dl['name']) \
+                if dl is not None and c.busy and name in dl['names'] and dl['name'] in dl['names'] else None
+            if turn == 0 or (turn is None and name == KITS and beta1 is not None):
+                share = dl['part'] if turn == 0 else beta1
+                row.update(state='downloading', tone='info', progress=share, can_download=False, can_remove=False,
+                           text=f"Downloading... {round(share * 100)} %{f' of {size}' if size else ''}")
+            elif turn is not None and turn > 0:
+                row.update(state='downloading', tone='info', progress=0.0, can_download=False, can_remove=False,
+                           text='Waiting for its turn...')
+            elif turn is not None:      # downloaded in this run: its row shows it once the run ends
+                row.update(can_download=False, can_remove=False, tone='good', text='Downloaded.')
+            out.append(row)
+        wanted = [r['name'] for r in rows if r['state'] in WANTED]
+        return {
+            'rows': out,
+            'all': {'can': bool(emulator and wanted) and not c.busy, 'count': len(wanted),
+                    'title': ('Pick shadPS4 first: the packs go in when you patch the game.' if not emulator else
+                              f"Download the {len(wanted)} pack{'s' if len(wanted) != 1 else ''} not on this PC"
+                              if wanted else 'Every pack is downloaded.')},
+            'note': None if emulator else 'Pick shadPS4 first: the packs go in when you patch the game.',
+        }
+
+    def _kits(self, downloads):
+        """beta1's kits row (the slice's `kits`), from the Downloads row of kits.zip."""
+        row = next((r for r in downloads['rows'] if r['name'] == KITS), None)
+        if row is None:
+            return {'name': PACKS[KITS][0], 'size': '', 'state': 'none', 'progress': None, 'tone': 'caution',
+                    'text': "Not downloaded. Until then the teams wear the game's own kits."}
+        state = {'here': 'ready', 'downloading': 'downloading'}.get(row['state'], 'none')
+        return {'name': row['title'], 'size': row['size'], 'state': state, 'progress': row['progress'],
+                'tone': row['tone'], 'text': row['text']}
+
+    def _program(self):
+        state = selfupdate._state()
+        on = state.get('check_updates', True) is not False
+        newer = self.newer if self.newer and self.newer.get('version') != self.skipped else None
+        if newer:
+            line = {'tone': 'caution', 'text': f"Version {newer['version']} is out."}
+        elif self.looked or (on and state.get('checked')):
+            line = {'tone': 'good', 'text': 'This is the newest version.'}
+        else:
+            line = {'tone': '', 'text': 'Press Check now to look for a newer version.'}
+        return {'version': VERSION, 'check_on_start': on, 'newer': dict(newer) if newer else None, 'state': line,
+                'skipped': self.skipped or None}
+
+    def view(self):
+        c = self.ctl
+        with c.lock:
+            f = self.found or {}
+            emulator = self.known_emulator()
+            first = not emulator
+            running = bool(f.get('running'))
+            checks = self._checks(f, first)
+            rosters = c.parts['rosters']
+            build = f.get('build') if f.get('emulator') == emulator else None
+            downloads = self._downloads(emulator)
+            beta1 = self.snap_setup()       # the lock is re-entrant (re/scripts/oneclick_run.py reads these keys)
+            return dict(beta1, **{
+                'first': first,
+                'emulator': {'path': emulator, 'build': (f"{build['branch']} · {build['version']}" if build else
+                                                         gamesetup.BUILD_BRANCH if emulator else '')},
+                'checks': checks,
+                'state': self._state(first, checks, f.get('firewall'), rosters.open_roster() is not None),
+                'checking': bool(self.checking),
+                'running': running,
+                'online': {'server': self.server['host'], 'server_default': SERVER['host'],
+                           'is_default': self.server == SERVER, 'error': self.server_error, 'port': GAME_PORT,
+                           'firewall': self._firewall(emulator, f.get('firewall'))},
+                'downloads': downloads,
+                'kits': self._kits(downloads),
+                'program': self._program(),
+                'rosters': rosters.view(not first, running, f.get('teams32')),
+                'busy': bool(c.busy),
+            })

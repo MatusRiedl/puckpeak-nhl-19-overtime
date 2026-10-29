@@ -1,0 +1,560 @@
+import json
+import os
+import threading
+import types
+
+import pytest
+
+from overtime_core import overlay
+from overtime_roster.app import gamesetup, jobs, launch, patch, setup_controller as SC
+
+from test_gamesetup import world  # noqa: F401  (fixture)
+
+SEATTLE_READY = SC.SetupController._seattle_ready
+
+
+class FakeHost:
+    def __init__(self):
+        self.slices, self.changes, self.logs = {}, [], []
+
+    def register(self, name, snap):
+        self.slices[name] = snap
+
+    def changed(self, *names):
+        self.changes += names
+
+    def log(self, text):
+        self.logs.append(text)
+
+
+class FakeCtl:
+    def __init__(self, game_dir):
+        self.host = FakeHost()
+        self.lock = threading.RLock()
+        self.busy = None
+        self.prefs = {}
+        self.game_dir = game_dir
+        self.patch_want = {'text': True, 'names': False, 'league': False, 'roster': False}
+        self.said = []
+
+    def say(self, text, tone='info', progress=None):
+        self.said.append((text, tone))
+
+    def changed(self, *names):
+        self.host.changed(*names)
+
+    def remember(self, **kv):
+        self.prefs.update(kv)
+
+    def set_game_dir(self, path):
+        self.game_dir = path
+
+
+@pytest.fixture
+def sc(world, monkeypatch):  # noqa: F811
+    def run_now(work, done=None, failed=None, expected=()):
+        try:
+            out = work()
+        except expected as err:
+            if failed:
+                failed(str(err))
+            return
+        if done:
+            done(out)
+    monkeypatch.setattr(jobs, 'run', run_now)
+    monkeypatch.setattr(overlay, 'emulator_running', lambda: False)
+    monkeypatch.setattr(gamesetup, 'firewall_allows', lambda emu: None)
+    monkeypatch.setattr(gamesetup, 'server_answers', lambda host, **kw: (True, ''))   # no network in the tests
+    calls = {'apply': [], 'undo': []}
+    calls['menus'] = []
+
+    calls['art'] = []
+
+    def apply(game_dir, layers, database=None, menus=None, art=None):
+        calls['apply'].append(layers)
+        calls['menus'].append(menus)
+        calls['art'].append(art)
+        return {'layers': layers}
+    monkeypatch.setattr(overlay, 'apply', apply)
+    monkeypatch.setattr(overlay, 'undo', lambda game_dir: calls['undo'].append(game_dir) or [])
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'applied': bool(calls['apply']), 'layers': {}, 'problems': []})
+    monkeypatch.setattr(patch, 'art_packs', lambda cache_dir=None, game_dir=None, kits=True, photos=True: (list(getattr(patch, '_test_packs', [])), []))
+    from overtime_roster.app import patch_ctl
+    monkeypatch.setattr(patch_ctl, 'packs_here', lambda cache: list(getattr(
+        patch, '_test_found', patch.ART_PACKS if getattr(patch, '_test_packs', None) else [])))
+    monkeypatch.setattr(SC, 'patch_cache', lambda: None)
+    monkeypatch.setattr(SC.SetupController, '_seattle_ready', lambda self, database: getattr(self, 'seattle', False))
+    ctl = FakeCtl(str(world['game']))
+    s = SC.SetupController(ctl)
+    s.calls, s.world = calls, world
+    return s
+
+
+def test_scan_finds_everything(sc):
+    sc.setup_refresh()
+    snap = sc.snap_setup()
+    assert snap['emulator'] == str(sc.world['emu']) and snap['game_ok']
+    assert snap['users'] == [{'user_id': 1000, 'name': 'shadPS4', 'shadnet': True, 'npid': 'skater',
+                              'password': True}]
+    assert not snap['installed'] and not snap['network_ok']
+    assert snap['server'] == SC.SERVER and snap['server_default']
+    assert 'hunter2' not in json.dumps(snap)
+
+
+def test_one_click_then_unpatch(sc):
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] == [['text']]
+    snap = sc.snap_setup()
+    assert snap['installed'] and snap['intact'] and snap['network_ok']
+    assert snap['targets'] == {'redirector': 'ot.puckpeak.com', 'nucleus': [
+        'https://ot.puckpeak.com/', 'https://91.98.195.150/', 'https://91.98.195.150/']}
+    assert snap['clean'] and gamesetup.load_clean()['files']['eboot.bin'][1]
+    assert sc.ctl.prefs['patched_by'] == SC.VERSION    # Update warns when an older Overtime patched (update_ctl)
+    sc.setup_verify()
+    assert sc.verify_result['diff'] == []
+    sc.setup_unpatch()
+    assert sc.calls['undo'] == [str(sc.world['game'])]
+    snap = sc.snap_setup()
+    assert not snap['installed'] and not (sc.world['user'] / 'patches' / 'Overtime').exists()
+    assert sc.ctl.said[-1][1] == 'good'
+
+
+def test_patch_refused_for_wrong_game_and_running(sc, monkeypatch):
+    sc.setup_refresh()
+    monkeypatch.setattr(overlay, 'emulator_running', lambda: True)
+    sc.setup_patch()
+    assert sc.ctl.said[-1] == ('shadPS4 is running. Close NHL 19, then press Patch again.', 'caution')
+    assert not gamesetup.load_manifest()
+    assert sc.ctl.busy is None
+
+
+def test_server_override_and_reset(sc):
+    assert 'error' in sc.setup_set_server('ot.puckpeak.com', 'https://ot.puckpeak.com/')  # 24 > 23 / 22
+    assert sc.setup_set_server('192.168.1.15') == {'ok': True}
+    assert sc._xml() == SC.xmlpatch.build('192.168.1.15')
+    assert sc.ctl.prefs['setup']['server'] == {'host': '192.168.1.15', 'nucleus_url': None}
+    sc.setup_set_server('')
+    assert sc.server == SC.SERVER and sc.ctl.prefs['setup']['server'] == {}
+
+
+def test_emulator_pick(sc, tmp_path):
+    other = tmp_path / 'notes.exe'
+    other.write_bytes(b'MZ')
+    assert 'error' in sc.setup_set_emulator(str(other))
+    assert sc.setup_set_emulator(str(sc.world['emu'])) == {'ok': True}
+    assert sc.ctl.prefs['setup']['emulator'] == str(sc.world['emu'])
+
+
+def test_play_refusal_is_reported(sc, monkeypatch):
+    def refuse(*a, **kw):
+        raise launch.LaunchError('shadPS4 is already running.')
+    monkeypatch.setattr(launch, 'start', refuse)
+    sc.setup_refresh()
+    assert sc.setup_play() == {'error': 'shadPS4 is already running.'}
+
+
+def test_one_click_switch_off_takes_its_layer_away(sc, monkeypatch):
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'applied': True, 'problems': [],
+                                                            'layers': {'text': {}, 'database': {'bytes': 1}}})
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] == [['text']]  # a switch that is off is off: the served default roster goes
+
+
+def test_one_click_hides_modes_with_options(sc, monkeypatch):
+    sc.ctl.patch_want.update(menus=True, chel=True)
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'applied': True, 'problems': [],
+                                                            'layers': {'menus': {'options': {'chel': False}}}})
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] == [['text', 'menus']] and sc.calls['menus'] == [{'chel': True, 'news': True}]
+
+
+def test_patch_brings_the_news_tile_back_over_a_beta1_patch(sc, monkeypatch):
+    """news is not a switch: a beta1 patch served the hub without the news tile (news False), Patch serves it again."""
+    sc.ctl.patch_want.update(menus=True, chel=False)
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'applied': True, 'problems': [], 'layers': {
+        'menus': {'options': {'chel': False, 'news': False}, 'news': False}}})
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['menus'] == [{'chel': False, 'news': True}]
+
+
+def test_one_click_menus_off_drops_served_menus(sc, monkeypatch):
+    sc.ctl.patch_want.update(menus=False)
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'applied': True, 'problems': [],
+                                                            'layers': {'text': {}, 'menus': {'options': {}}}})
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] == [['text']]  # switched off here: the served menus edit goes
+
+
+def test_one_click_all_switches_off_removes_the_data_patch(sc, monkeypatch):
+    sc.ctl.patch_want = {'text': False, 'names': False, 'league': False, 'roster': False, 'menus': False}
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'applied': True, 'problems': [],
+                                                            'layers': {'text': {}, 'menus': {'options': {}}}})
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] == [] and sc.calls['undo'] == [sc.ctl.game_dir]  # as the Patch tab does it
+    assert sc.ctl.said[-1][1] == 'good'
+
+
+def test_play_double_click_starts_one_emulator(sc, monkeypatch):
+    started = []
+    monkeypatch.setattr(launch, 'start', lambda *a, **kw: started.append(a) or object())
+    sc.emulator = str(sc.world['emu'])
+    sc._launching = True  # the first click is still inside launch.start
+    assert sc.setup_play() is None and started == []
+
+
+def test_one_click_keeps_31_teams_without_seattle(sc):
+    """The 32-team switch only with a roster whose Seattle has players and is active (New Season crash, ws8 run7a)."""
+    installed = sc.world['user'] / 'patches' / 'Overtime' / 'overtime.xml'
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert not SC.xmlpatch.expansion32(installed.read_text(encoding='utf-8'))
+    assert '31 teams' in sc.ctl.said[-1][0] and sc.ctl.said[-1][1] == 'good'
+    sc.seattle = True
+    sc.setup_patch()
+    assert SC.xmlpatch.expansion32(installed.read_text(encoding='utf-8')) and '31' not in sc.ctl.said[-1][0]
+
+
+def test_one_click_seattle_in_be_a_pro_only_with_the_league_layer(sc):
+    """bap32 offers Seattle in Choose Team; the league layer's Lua makes the career start there."""
+    installed = sc.world['user'] / 'patches' / 'Overtime' / 'overtime.xml'
+    sc.seattle = True
+    sc.setup_refresh()
+    sc.setup_patch()  # the fake's league switch is off
+    text = installed.read_text(encoding='utf-8')
+    assert SC.xmlpatch.expansion32(text) and not SC.xmlpatch.bap32(text)
+    sc.ctl.patch_want = {**sc.ctl.patch_want, 'league': True}
+    sc.setup_patch()
+    text = installed.read_text(encoding='utf-8')
+    assert SC.xmlpatch.expansion32(text) and SC.xmlpatch.bap32(text)
+
+
+def test_seattle_ready_reads_the_roster_the_game_starts_from(sc, monkeypatch):
+    parsed = []
+    monkeypatch.setattr(SC, 'tdb', types.SimpleNamespace(Database=types.SimpleNamespace(
+        parse=lambda raw, schema: parsed.append(raw) or raw)))
+    monkeypatch.setattr(SC, 'rosterupdate', types.SimpleNamespace(seattle_ready=lambda db: db == b'filled'))
+    sc.ctl.game = types.SimpleNamespace(schema=lambda: None)
+    assert SEATTLE_READY(sc, b'filled') and not SEATTLE_READY(sc, b'empty')  # the default roster just built
+    assert not SEATTLE_READY(sc, None)  # no database layer: the stock roster, Seattle empty
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'layers': {'database': {}}})
+    monkeypatch.setattr(overlay, '_current_database', lambda game_dir, state: b'filled')
+    assert SEATTLE_READY(sc, None) and parsed == [b'filled', b'empty', b'filled']  # the one served now
+
+
+def test_refused_server_and_emulator_are_said(sc, tmp_path):
+    sc.setup_set_server('my--pc.lan')
+    assert sc.ctl.said[-1][1] == 'bad' and sc.server == SC.SERVER
+    other = tmp_path / 'notes.exe'
+    other.write_bytes(b'MZ')
+    sc.setup_set_emulator(str(other))
+    assert sc.ctl.said[-1][1] == 'bad'
+
+
+def test_one_click_serves_the_art_packs_found(sc, monkeypatch):
+    monkeypatch.setattr(patch, '_test_packs', ['looks', 'photos'], raising=False)
+    sc.ctl.patch_want['art'] = True
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] == [['text', 'art']] and sc.calls['art'] == [['looks', 'photos']]
+
+
+def test_one_click_art_off_drops_the_served_art(sc, monkeypatch):
+    monkeypatch.setattr(patch, '_test_packs', ['looks'], raising=False)
+    sc.ctl.patch_want['art'] = False
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'applied': True, 'problems': [],
+                                                            'layers': {'text': {}, 'art': {'packs': []}}})
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] == [['text']] and sc.calls['art'] == [None]
+
+
+def test_one_click_without_packs_takes_the_served_art_away(sc, monkeypatch):
+    """v0.10.0: the art switch needs the Photos, logos pack here; without it the switch is off, so Patch takes a
+    served art layer away (the game's own look)."""
+    sc.ctl.patch_want['art'] = True
+    monkeypatch.setattr(overlay, 'status', lambda game_dir: {'applied': True, 'problems': [],
+                                                            'layers': {'text': {}, 'art': {'packs': []}}})
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] == [['text']] and sc.calls['art'] == [None]
+
+
+# --- Downloads (packdownload) and This program's Check now (2026-10-21) --------------------------------------------
+class FakeShell:
+    def __init__(self):
+        self.asked = []
+
+    def ask(self, title, lines, buttons, answers=None, tone=''):
+        self.asked.append((title, lines, [b[1] for b in buttons], dict(answers or {})))
+
+    def ask_unsaved(self, what, go):
+        return go()
+
+
+def _packs_world(sc, monkeypatch, tmp_path):
+    from overtime_roster.app import packdownload
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    monkeypatch.setattr(SC, 'patch_cache', lambda: str(cache))
+    monkeypatch.delenv('OVERTIME_ART_PACKS', raising=False)
+    have = {'looks32.zip'}
+    got = []
+
+    def status(cache_dir, game_dir=None, **kw):
+        return [{'name': n, 'title': p['title'], 'core': p['core'], 'size': 2 ** 20 * 5,
+                 'state': 'here' if n in have else 'missing', 'local_size': 2 ** 20 * 5 if n in have else None,
+                 'removable': n in have, 'text': ''} for n, p in packdownload.PACKS.items()]
+
+    def download(names, cache_dir, progress=None, game_dir=None, **kw):
+        out = []
+        for n in names:
+            progress(n, 1, 2)
+            got.append(n)
+            have.add(n)
+            out.append((n, True, 'Downloaded.'))
+        return out
+
+    def remove(name, cache_dir):
+        had = name in have
+        have.discard(name)
+        return had
+    monkeypatch.setattr(packdownload, 'status', status)
+    monkeypatch.setattr(packdownload, 'download', download)
+    monkeypatch.setattr(packdownload, 'remove', remove)
+    sc.ctl.shell = FakeShell()
+    sc.ctl.parts = {}
+    return have, got
+
+
+def _downloads(sc):
+    return sc._downloads(sc.known_emulator())
+
+
+def test_downloads_list_every_pack_and_fetch_them(sc, monkeypatch, tmp_path):
+    from overtime_roster.app import packdownload
+    have, got = _packs_world(sc, monkeypatch, tmp_path)
+    sc.packs = SC.pack_status(SC.patch_cache())
+    d = _downloads(sc)
+    assert [r['name'] for r in d['rows']] == list(packdownload.PACKS)
+    assert d['all']['can'] is False and d['note']                   # shadPS4 not picked yet: nothing to fetch
+    assert sc.pack_download('looks.zip') == {'error': d['note']} and got == []
+    sc.setup_set_emulator(str(sc.world['emu']))
+    d = _downloads(sc)
+    assert d['all'] == {'can': True, 'count': 3, 'title': 'Download the 3 packs not on this PC'}
+    row = {r['name']: r for r in d['rows']}
+    assert row['looks32.zip']['can_remove'] and not row['looks32.zip']['can_download']
+    assert row['looks.zip']['can_download'] and row['looks.zip']['size'] == '5 MB'
+    assert sc.pack_download('nope.zip') == {'error': 'Overtime Roster does not know this pack.'}
+    sc.pack_download('looks.zip')
+    assert got == ['looks.zip'] and sc.ctl.busy is None and sc.dl is None
+    assert sc.ctl.said[-1] == ('Downloaded: Utah and Seattle looks. Patch the game again to put them in.', 'good')
+    sc.packs_download_all()
+    assert got == ['looks.zip', 'photos.zip', 'kits.zip'] and _downloads(sc)['all']['count'] == 0
+    sc.packs_download_all()
+    assert sc.ctl.said[-1] == ('Every pack is downloaded already.', 'good')
+    assert sc._kits(_downloads(sc))['state'] == 'ready'                    # beta1's kits row follows kits.zip
+
+
+def test_downloads_delete_asks_first(sc, monkeypatch, tmp_path):
+    have, _got = _packs_world(sc, monkeypatch, tmp_path)
+    sc.packs = SC.pack_status(SC.patch_cache())
+    sc.pack_remove('looks.zip')                                     # not downloaded: nothing to ask
+    assert sc.ctl.shell.asked == [] and 'nothing downloaded' in sc.ctl.said[-1][0]
+    sc.pack_remove('looks32.zip')
+    (title, _lines, buttons, answers), = sc.ctl.shell.asked
+    assert title == 'Delete "NHL 27 looks for all 32 teams"?' and buttons == ['delete', 'keep']
+    assert 'looks32.zip' in have
+    answers['delete']()
+    assert 'looks32.zip' not in have and sc.ctl.said[-1][1] == 'good'
+    assert not {r['name']: r for r in _downloads(sc)['rows']}['looks32.zip']['can_remove']
+
+
+def test_check_now_asks_what_it_found(sc, monkeypatch):
+    from overtime_roster.app import selfupdate
+    sc.ctl.shell = FakeShell()
+    marked = []
+    monkeypatch.setattr(selfupdate, 'mark_checked', lambda *a: marked.append(1))
+    monkeypatch.setattr(selfupdate, 'latest', lambda fetch_text=None, **kw: None)
+    sc.check_now()
+    assert sc.ctl.shell.asked[-1][0] == 'You have the newest version' and marked and sc.looked
+    assert sc._program()['state'] == {'tone': 'good', 'text': 'This is the newest version.'}
+
+    def offline(fetch_text=None, **kw):
+        try:
+            fetch_text('https://example.invalid/latest.json')
+        except Exception:
+            return None
+    monkeypatch.setattr(selfupdate, 'http_text', lambda url, timeout=None: (_ for _ in ()).throw(OSError('down')))
+    monkeypatch.setattr(selfupdate, 'latest', offline)
+    marked.clear()
+    sc.check_now()
+    assert sc.ctl.shell.asked[-1][0] == 'The program could not look' and not marked
+    release = types.SimpleNamespace(text='9.9.9', notes='- Faster\n- Better', page='', can_install=lambda: False)
+    monkeypatch.setattr(selfupdate, 'latest', lambda fetch_text=None, **kw: release)
+    sc.check_now()
+    title, lines, buttons, answers = sc.ctl.shell.asked[-1]
+    assert title == 'Version 9.9.9 is out' and 'Faster' in lines and buttons == ['page', 'later', 'skip']
+    assert sc._program()['newer'] == {'version': '9.9.9', 'notes': ['Faster', 'Better']}
+    answers['skip']()
+    assert sc._program()['newer'] is None and sc.ctl.prefs['setup']['skipped'] == '9.9.9'
+    sc.ctl.busy = 'Patching NHL 19...'
+    assert sc.check_now() is None and sc.ctl.said[-1] == ('Wait a moment: patching NHL 19 is still running.', 'caution')
+
+
+@pytest.mark.game
+def test_rosters_delete_moves_the_save_to_the_recycle_bin(game_dir, default_roster, tmp_path, monkeypatch):
+    """Through the Controller, on the game's roster and a throwaway saves folder: the game's roster cannot go,
+    a save goes only after the question (and not while shadPS4 runs); the open one gone, the Overtime default opens."""
+    import shutil
+    from overtime_roster.app import controller as C, sources, trash
+    from test_savebar_app import Host, _template_save
+    monkeypatch.setenv('OVERTIME_ROSTER_HOME', str(tmp_path / 'home'))
+
+    def inline(work, done=None, failed=None, expected=()):
+        try:
+            out = work()
+        except expected as err:
+            return failed and failed(str(err))
+        return done and done(out)
+    monkeypatch.setattr(jobs, 'run', inline)
+    moved = []
+    monkeypatch.setattr(trash, '_shell_delete', lambda op: moved.append(op.pFrom) or shutil.rmtree(op.pFrom) or 0)
+    monkeypatch.setattr(trash.sys, 'platform', 'win32')
+    running = [False]
+    monkeypatch.setattr(overlay, 'emulator_running', lambda: running[0])
+    saves = str(tmp_path / 'saves')
+    _template_save(saves)
+    c = C.Controller(Host(), game_dir=game_dir, save_dir=saves)
+    c.load_source(sources.GAME_ID)
+    assert c.calls['rosters_delete']('game') == {'error': 'The game roster and the Overtime default cannot be deleted.'}
+    c.calls['save_name']('Gone soon')
+    c.calls['save'](None)
+    rosters = c.parts['rosters']
+    ident = rosters.open_id
+    assert ident == 'save:RosterCustom0' and os.path.isdir(os.path.join(saves, 'RosterCustom0'))
+    running[0] = True
+    c.calls['rosters_delete'](ident)
+    assert c.host.snap('question')['title'] == 'Close shadPS4 first'
+    running[0] = False
+    c.calls['rosters_delete'](ident)
+    q = c.host.snap('question')
+    assert q['title'] == 'Move "Gone soon" to the Recycle Bin?' and [b['answer'] for b in q['buttons']] == ['delete', 'keep']
+    assert any('Overtime default opens instead' in line for line in q['lines'])
+    c.calls['answer'](q['id'], 'delete')
+    assert moved == [os.path.join(saves, 'RosterCustom0')] and not os.path.exists(moved[0])
+    assert rosters.open_id != ident and c.session is not None          # the Overtime default is open now
+    assert 'is in the Recycle Bin' in c.status['text']
+
+
+def test_one_click_never_downloads_packs(sc, monkeypatch, tmp_path):
+    """v0.10.0: Patch uses only the packs here; downloading is the Photos, logos pack card's."""
+    from overtime_roster.app import packdownload, patch_ctl
+    monkeypatch.setattr(patch_ctl, 'cache_dir', lambda: str(tmp_path / 'cache'))
+    monkeypatch.setattr(packdownload, 'missing_core', lambda cache, game_dir=None: ['looks32.zip', 'photos.zip'])
+    monkeypatch.setattr(packdownload, 'download', lambda *a, **kw: pytest.fail('the patch downloaded a pack'))
+    monkeypatch.setattr(SC.SetupController, '_default_roster', lambda self: object())
+    sc.ctl.patch_want.update(art=True, roster=True, photos=True)
+    sc.setup_refresh()
+    sc.setup_patch()
+    assert sc.calls['apply'] and 'art' not in sc.calls['apply'][0]     # no pack here: the art switch is off
+    text, tone = next((t, tone) for t, tone in reversed(sc.ctl.said) if t.startswith('Patched'))
+    assert tone == 'good' and 'not downloaded' not in text
+
+
+def test_pack_switches_need_the_pack():
+    from overtime_roster.app import patch_ctl
+    everything = list(patch.ART_PACKS)
+    assert not any(patch_ctl.switches({'roster': True}, everything)[k] for k in patch_ctl.PACK_KEYS)   # off by default
+    on = {'roster': True, 'art': True, 'photos': True, 'kits': True}
+    assert all(patch_ctl.switches(on, everything)[k] for k in patch_ctl.PACK_KEYS)
+    assert not any(patch_ctl.switches(on, [])[k] for k in patch_ctl.PACK_KEYS)
+    assert patch_ctl.why(on, 'art', []) == patch_ctl.NO_PACK and 'Utah' in patch_ctl.NO_PACK and 'Seattle' in patch_ctl.NO_PACK
+    assert patch_ctl.why(on, 'art', ['looks.zip']) is None                       # either looks pack is the art
+    assert patch_ctl.why(on, 'kits', ['looks.zip']) == patch_ctl.NO_PACK         # the kits need kits.zip
+    assert patch_ctl.why(dict(on, roster=False), 'photos', everything) == \
+        f'Needs the {patch_ctl.SEASON_LABEL} default roster.'
+    assert patch_ctl.why(dict(on, art=False), 'photos', everything) == 'Needs "NHL 27 team art".'
+    served = patch_ctl.served({'layers': {'art': {'packs': [{'name': 'looks'}, {'name': 'photos'}]}}})
+    assert served['photos'] and served['art'] and not served['kits']
+
+
+def _card(sc):
+    return sc.pack_card(sc.known_emulator())
+
+
+def test_pack_card_downloads_all_and_switches_on(sc, monkeypatch, tmp_path):
+    from overtime_roster.app import patch_ctl
+    have, got = _packs_world(sc, monkeypatch, tmp_path)
+    monkeypatch.setattr(patch_ctl, 'packs_here', lambda cache: sorted(have))
+    sc.ctl.patch_want.update(roster=True)
+    sc.packs = SC.pack_status(SC.patch_cache())
+    card = _card(sc)
+    assert card['title'] == SC.PACK_TITLE and not card['can_download'] and 'Pick shadPS4' in card['text']
+    sc.setup_set_emulator(str(sc.world['emu']))
+    card = _card(sc)
+    assert card['state'] == 'partial' and card['can_download'] and card['size'] == '15 MB'   # the 3 missing
+    assert card['text'] == '1 of 4 packs downloaded. Download the rest (15 MB).' and card['can_remove']
+    sc.packs_get()
+    assert got == ['looks.zip', 'photos.zip', 'kits.zip'] and sc.dl is None
+    assert sc.ctl.said[-1] == (f'{SC.PACK_TITLE} downloaded and switched on. Press Patch to put it in the game.',
+                               'good')
+    assert all(sc.ctl.patch_want[k] for k in patch_ctl.PACK_KEYS)
+    assert sc.ctl.prefs['patch']['art'] and sc.ctl.prefs['patch']['kits']
+    card = _card(sc)
+    assert card['state'] == 'here' and card['tone'] == 'good' and card['size'] == '20 MB'
+
+
+def test_pack_card_photos_wait_for_the_roster_switch(sc, monkeypatch, tmp_path):
+    from overtime_roster.app import patch_ctl
+    have, _got = _packs_world(sc, monkeypatch, tmp_path)
+    monkeypatch.setattr(patch_ctl, 'packs_here', lambda cache: sorted(have))
+    sc.ctl.patch_want.update(roster=False)
+    sc.setup_set_emulator(str(sc.world['emu']))
+    sc.packs = SC.pack_status(SC.patch_cache())
+    sc.packs_get()
+    assert sc.ctl.patch_want['art'] and sc.ctl.patch_want['kits'] and not sc.ctl.patch_want['photos']
+
+
+def test_pack_card_delete_asks_then_switches_off(sc, monkeypatch, tmp_path):
+    from overtime_roster.app import patch_ctl
+    have, _got = _packs_world(sc, monkeypatch, tmp_path)
+    have.update(patch.ART_PACKS)
+    monkeypatch.setattr(patch_ctl, 'packs_here', lambda cache: sorted(have))
+    sc.ctl.patch_want.update(art=True, photos=True, kits=True, roster=True)
+    sc.packs = SC.pack_status(SC.patch_cache())
+    sc.packs_drop()
+    (title, lines, buttons, answers), = sc.ctl.shell.asked
+    assert title == f'Delete the {SC.PACK_TITLE}?' and buttons == ['delete', 'keep'] and '20 MB' in lines[0]
+    assert have == set(patch.ART_PACKS)                                  # nothing gone before the answer
+    answers['delete']()
+    assert not have and not any(sc.ctl.patch_want[k] for k in patch_ctl.PACK_KEYS)
+    assert sc.ctl.said[-1] == (f'The {SC.PACK_TITLE} is deleted. Patch the game again to take it out.', 'good')
+    card = _card(sc)
+    assert card['state'] == 'missing' and not card['can_remove']
+    sc.setup_set_emulator(str(sc.world['emu']))
+    assert patch_ctl.NO_PACK in _card(sc)['text']
+
+
+def test_pack_switches_migrate_once(tmp_path, monkeypatch):
+    """v0.10.0: a fresh install has the pack switches off; an older install keeps them when it has a pack in the
+    cache or the game is served art; after the marker the settings are taken as they are."""
+    from overtime_roster.app import controller as C, paths
+    monkeypatch.setattr(paths, 'app_dir', lambda name: str(tmp_path / name))
+    game = tmp_path / 'game'
+    old = {'patch': {'text': False, 'kits': False}}
+    assert C.packs_migrate({}, str(game)) == {}                               # fresh: the defaults (off)
+    assert C.packs_migrate(old, str(game)) == {'text': False}                 # no pack: the pack switches go off
+    (tmp_path / 'cache').mkdir()
+    (tmp_path / 'cache' / 'looks.zip').write_bytes(b'PK')
+    assert C.packs_migrate(old, str(game)) == {'text': False, 'art': True, 'photos': True, 'kits': False}
+    (tmp_path / 'cache' / 'looks.zip').unlink()
+    monkeypatch.setattr(overlay, '_load_state', lambda game_dir: {'layers': {'art': {'packs': []}}})
+    assert C.packs_migrate(old, str(game))['art'] is True                     # served art counts too
+    marked = {'patch': {'art': False, 'photos': True}, 'packs_default': C.PACKS_DEFAULT}
+    assert C.packs_migrate(marked, str(game)) == {'art': False, 'photos': True}

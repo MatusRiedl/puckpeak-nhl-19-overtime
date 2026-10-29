@@ -1,0 +1,164 @@
+/* Setup tab. The Setup builder owns this file. Rules sit under .tab-setup (the pane) and use the prefix .su-
+   (docs/ui/CONTRACT.md); tokens from tokens.css, parts from app.css. Legacy's Setup layout: the steps on the left (where is
+   shadPS4, online, downloads), the rosters on the right with this program under them. */
+
+/* --- marks: a slanted NHL 19 box with ✓ ✕ ! … in the tone's colour ------------------------------------------------- */
+:is(.tab-setup, .tab-multiplayer) .su-mark { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px;
+  transform: skewX(var(--slant)); background: rgba(255, 255, 255, .06); color: var(--text-3); }
+:is(.tab-setup, .tab-multiplayer) .su-mark svg { width: 12px; height: 12px; transform: skewX(calc(-1 * var(--slant))); }
+:is(.tab-setup, .tab-multiplayer) .su-mark.good { background: rgba(49, 199, 120, .18); color: var(--good); }
+:is(.tab-setup, .tab-multiplayer) .su-mark.bad { background: rgba(230, 0, 65, .22); color: #ff6b8f; }
+:is(.tab-setup, .tab-multiplayer) .su-mark.caution { background: rgba(248, 191, 0, .16); color: var(--caution); }
+:is(.tab-setup, .tab-multiplayer) .su-mark.info { background: rgba(0, 126, 236, .18); color: #6fb6ff; }
+
+/* --- 1 Where is shadPS4?: the path, four check tiles, what to do next ------------------------------------------------ */
+.tab-setup .su-where .card-body { container-type: inline-size; }
+.tab-setup .su-checks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.tab-setup .su-check { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 6px 9px; background: var(--tile);
+  box-shadow: inset 3px 0 0 var(--text-off); }
+.tab-setup .su-check.good { box-shadow: inset 3px 0 0 var(--good); }
+.tab-setup .su-check.bad { box-shadow: inset 3px 0 0 var(--bad); background: linear-gradient(90deg, rgba(230, 0, 65, .12), var(--tile) 70%); }
+.tab-setup .su-check.caution { box-shadow: inset 3px 0 0 var(--caution); background: linear-gradient(90deg, rgba(248, 191, 0, .09), var(--tile) 70%); }
+.tab-setup .su-ct { display: flex; flex-direction: column; min-width: 0; }
+.tab-setup .su-cl { font: 700 12.5px/1.3 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style);
+  letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.tab-setup .su-cv { font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-setup .su-check.idle .su-cv { color: var(--text-3); font-weight: 400; }
+.tab-setup .su-check.bad .su-cv { color: #ff6b8f; }
+.tab-setup .su-check.caution .su-cv { color: var(--caution); }
+.tab-setup .su-checks.checking .su-check { animation: su-wait 1.2s ease-in-out infinite; }
+.tab-setup .su-checks.checking .su-check:nth-child(2) { animation-delay: .15s; }
+.tab-setup .su-checks.checking .su-check:nth-child(3) { animation-delay: .3s; }
+.tab-setup .su-checks.checking .su-check:nth-child(4) { animation-delay: .45s; }
+@keyframes su-wait { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+/* a narrow column: two by two, label and value on one line */
+@container (max-width: 600px) {
+  .tab-setup .su-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tab-setup .su-check { padding: 5px 9px; }
+  .tab-setup .su-ct { flex-direction: row; align-items: baseline; gap: 8px; }
+  .tab-setup .su-cl { flex: none; }
+}
+.tab-setup .su-state { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; line-height: 1.35; color: var(--text-2); }
+.tab-setup .su-st { flex: 1; min-width: 0; }
+.tab-setup .su-state.good { color: var(--good); }
+.tab-setup .su-state.bad { color: #ff4f7b; }
+.tab-setup .su-state.caution { color: var(--caution); }
+.tab-setup .su-state.info { color: var(--text-soft); }
+.tab-setup .su-first .su-where { box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent), 0 10px 30px rgba(0, 0, 0, .35); }
+
+/* --- Online: label | control | button lines ------------------------------------------------------------------------- */
+:is(.tab-setup, .tab-multiplayer) .su-lines { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 6px; }
+:is(.tab-setup, .tab-multiplayer) .su-lines .field-label { font-size: 13px; }
+:is(.tab-setup, .tab-multiplayer) .su-server { height: 30px; }
+:is(.tab-setup, .tab-multiplayer) .su-server.bad { box-shadow: inset 0 -2px 0 var(--bad); }
+:is(.tab-setup, .tab-multiplayer) .su-hint { grid-column: 2 / -1; margin-top: -2px; font-size: 12px; line-height: 1.35; color: var(--text-3); }
+:is(.tab-setup, .tab-multiplayer) .su-hint.bad { color: #ff4f7b; }
+:is(.tab-setup, .tab-multiplayer) .su-fw { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 26px; font-size: 13.5px; color: var(--text-soft); }
+:is(.tab-setup, .tab-multiplayer) .su-fwt { min-width: 0; }
+:is(.tab-setup, .tab-multiplayer) .su-fw.wide { grid-column: 2 / -1; }
+:is(.tab-setup, .tab-multiplayer) .su-fw.caution .su-fwt { color: var(--caution); }
+:is(.tab-setup, .tab-multiplayer) .su-fw.bad .su-fwt { color: #ff4f7b; }
+:is(.tab-setup, .tab-multiplayer) .su-fw.idle .su-fwt, :is(.tab-setup, .tab-multiplayer) .su-fw:not(.good):not(.caution):not(.bad) .su-fwt { color: var(--text-3); }
+
+/* --- Downloads: one row per pack (Legacy's .step.dl) ------------------------------------------------------------------ */
+.tab-setup .su-dl { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 12px; background: var(--tile);
+  box-shadow: inset 3px 0 0 var(--text-off); }
+.tab-setup .su-dl.good { box-shadow: inset 3px 0 0 var(--good); }
+.tab-setup .su-dl.caution { box-shadow: inset 3px 0 0 var(--caution); }
+.tab-setup .su-dl.info { box-shadow: inset 3px 0 0 var(--accent); }
+.tab-setup .su-dl .main { flex: 1; min-width: 0; }
+.tab-setup .su-dl .title { font-size: 14.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-setup .su-dl .sub { font-size: 12.5px; line-height: 1.35; color: var(--text-2); }
+.tab-setup .su-dl.good .sub { color: var(--good); }
+.tab-setup .su-dl.caution .sub { color: var(--caution); }
+.tab-setup .su-dl .progress { width: 100%; height: 4px; margin-top: 5px; background: var(--input); }
+.tab-setup .su-dl-rows { display: flex; flex-direction: column; gap: 4px; }
+.tab-setup .su-dl-size { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--text-off); }
+.tab-setup .su-dl-all { display: flex; justify-content: flex-end; margin-top: 8px; }
+
+/* --- This program -------------------------------------------------------------------------------------------------- */
+.tab-setup .su-newer { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-2); }
+.tab-setup .su-newer.caution { color: var(--caution); }
+.tab-setup .su-newer.good { color: var(--text-soft); }
+.tab-setup .su-program .check { font-size: 13.5px; }
+
+/* --- 2 Which roster do you work on?: room, start fresh, the radio list ------------------------------------------------ */
+.tab-setup .su-rosters .card-body.fill { min-height: 0; }
+.tab-setup .su-rosters .small-note.su-warn { color: var(--caution); }
+.tab-setup .su-room { display: flex; align-items: center; gap: 9px; margin-top: 8px; font-size: 12.5px; line-height: 1.35; color: var(--text-2); }
+.tab-setup .su-count { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 9px; font-size: 12px; font-weight: 700;
+  font-variant-numeric: tabular-nums; background: var(--tile); color: var(--text-soft); clip-path: polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%); }
+.tab-setup .su-room.good .su-count { background: rgba(49, 199, 120, .16); color: var(--good); }
+.tab-setup .su-room.caution .su-count { background: rgba(248, 191, 0, .16); color: var(--caution); }
+.tab-setup .su-room.bad .su-count { background: rgba(230, 0, 65, .2); color: #ff6b8f; }
+.tab-setup .su-room.caution .su-room-text { color: var(--caution); }
+.tab-setup .su-room.bad .su-room-text { color: #ff4f7b; }
+.tab-setup .su-room-text { min-width: 0; }
+.tab-setup .su-fresh { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+.tab-setup .su-fl { margin-right: 2px; font-size: 12.5px; color: var(--text-2); }
+.tab-setup .su-list { gap: 4px; }
+.tab-setup .su-row { position: relative; display: flex; align-items: center; gap: 11px; padding: 8px 10px; background: var(--tile);
+  cursor: pointer; outline: none; transition: background-color .12s, box-shadow .12s; }
+.tab-setup .su-row:hover { background: var(--tile-hi); }
+.tab-setup .su-row.sel, .tab-setup .su-row:focus-visible { background: var(--tile-hi); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tab-setup .su-row.sel { cursor: default; }
+.tab-setup .su-dot { flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--text-3);
+  transition: background-color .12s, box-shadow .12s; }
+.tab-setup .su-row:hover .su-dot { box-shadow: inset 0 0 0 2px var(--text-soft); }
+.tab-setup .su-row.sel .su-dot { background: var(--accent); box-shadow: inset 0 0 0 3px var(--tile-hi), 0 0 0 2px var(--accent), 0 0 8px var(--glow); }
+.tab-setup .su-row .main { flex: 1; min-width: 0; }
+.tab-setup .su-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tab-setup .su-name .n { min-width: 0; font-size: 14.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-setup .su-name .chip { flex: none; }
+.tab-setup .su-meta { font-size: 12.5px; line-height: 1.4; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-setup .su-problem { font-size: 12.5px; line-height: 1.35; color: var(--caution); }
+/* the row's buttons show on hover, focus and the open row; hidden they take no room from the name */
+.tab-setup .su-acts { flex: none; display: none; gap: 6px; }
+.tab-setup .su-row:hover .su-acts, .tab-setup .su-row.sel .su-acts, .tab-setup .su-row:focus-within .su-acts { display: flex; }
+
+/* --- Discord and Ko-fi, first in the left column: Legacy's buttons and colours ---------------------------------------- */
+.tab-setup .su-links { display: flex; align-items: stretch; gap: 10px; flex: none; min-width: 0; container-type: inline-size; }
+.tab-setup .su-discord, .tab-setup .su-kofi { display: flex; align-items: center; gap: 10px; min-width: 0; border: 0;
+  border-radius: 4px; color: #fff; font: inherit; text-align: left; cursor: pointer; box-shadow: 0 3px 10px rgba(0, 0, 0, .35); }
+.tab-setup .su-discord { flex: 1 1 0; padding: 10px 16px; background: #5865f2; font-size: 15px; font-weight: 700; letter-spacing: .2px; }
+.tab-setup .su-discord svg { width: 22px; height: 22px; fill: currentColor; flex: none; }
+.tab-setup .su-discord .t { white-space: nowrap; }
+.tab-setup .su-discord .sub { margin-left: auto; min-width: 0; font-size: 12.5px; font-weight: 600; opacity: .85;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-setup .su-discord:hover { background: #6d79f6; }
+.tab-setup .su-discord:active { background: #4752c4; }
+.tab-setup .su-kofi { flex: none; padding: 8px 14px; border: 1px solid rgba(255, 244, 231, .16);
+  background: linear-gradient(135deg, #9d6535 0%, #bf7a3f 100%); transition: filter .16s ease; }
+.tab-setup .su-kofi .cup { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px;
+  height: 28px; border-radius: 50%; background: rgba(255, 248, 240, .18); font-size: 15px; line-height: 1;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
+.tab-setup .su-kofi .txt { display: flex; flex-direction: column; min-width: 0; }
+.tab-setup .su-kofi .t { font-size: 15px; font-weight: 700; line-height: 1.1; white-space: nowrap; }
+.tab-setup .su-kofi .sub { margin-top: 2px; font-size: 12px; line-height: 1.1; color: rgba(255, 247, 240, .86); white-space: nowrap; }
+.tab-setup .su-kofi:hover { filter: brightness(1.05); }
+.tab-setup .su-discord:focus-visible, .tab-setup .su-kofi:focus-visible { outline: 2px solid rgba(255, 255, 255, .8); outline-offset: 2px; }
+@container (max-width: 470px) { .tab-setup .su-discord .sub { display: none; } }
+
+/* --- short windows (under 720 lines): tighter, the hints go ------------------------------------------------------------ */
+@media (max-height: 720px) {
+  .tab-setup .su-discord { padding: 6px 12px; font-size: 13.5px; }
+  .tab-setup .su-discord svg { width: 18px; height: 18px; }
+  .tab-setup .su-kofi { padding: 4px 12px; }
+  .tab-setup .su-kofi .t { font-size: 13.5px; }
+  .tab-setup .su-kofi .sub { display: none; }
+  .tab-setup .col { gap: 6px; }
+  .tab-setup .su-checks { margin-top: 6px; gap: 4px; }
+  .tab-setup .su-check { padding-top: 2px; padding-bottom: 2px; }
+  .tab-setup .su-state { margin-top: 5px; }
+  :is(.tab-setup, .tab-multiplayer) .su-hint:not(.bad) { display: none; }
+  :is(.tab-setup, .tab-multiplayer) .su-lines { row-gap: 3px; }
+  :is(.tab-setup, .tab-multiplayer) .su-server { height: 26px; }
+  .tab-setup .su-dl { padding-top: 5px; padding-bottom: 5px; }
+  .tab-setup .su-newer { margin-bottom: 6px; }
+  .tab-setup .su-newer:not(.caution) { display: none; }   /* only "Version x is out" earns the line here */
+  .tab-setup .su-room { margin-top: 6px; }
+  .tab-setup .su-fresh { margin: 6px 0 8px; }
+  .tab-setup .su-row { padding: 6px 9px; flex-wrap: wrap; row-gap: 5px; }
+  /* the row's buttons on their own line, so the saved line under the name stays whole */
+  .tab-setup .su-acts { flex-basis: 100%; justify-content: flex-end; }
+}

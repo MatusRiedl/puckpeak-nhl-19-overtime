@@ -1,0 +1,663 @@
+"""The Multiplayer tab's controller (docs/plans/m3-multiplayer-tab.md): who the player is, the lobby calls against a fake
+service, the poller's state machine, and the game start with fakes for the hook, shadPS4 and the key presses."""
+import json
+import types
+
+import pytest
+
+from overtime_core import overlay, rules as RU
+from overtime_roster.app import gamesetup, keypress, launch, lobby_client as LC, multiplayer_ctl as MC
+
+
+class Host:
+    def __init__(self):
+        self.lines = []
+
+    def log(self, msg):
+        self.lines.append(msg)
+
+
+class FakeCtl:
+    def __init__(self, tmp_path, host='ot.puckpeak.com'):
+        self.prefs = {}
+        self.saved = []
+        self.pushed = []
+        self.host = Host()
+        self.game_dir = str(tmp_path / 'game')
+        self.game = types.SimpleNamespace(ok=True)
+        self.setup = types.SimpleNamespace(server={'host': host}, known_emulator=lambda: str(tmp_path / 'emu' / 'shadPS4.exe'))
+
+    def remember(self, **kv):
+        self.prefs.update(kv)
+        self.saved.append(kv)
+
+    def changed(self, *names):
+        self.pushed += names
+
+
+class FakeService:
+    """The lobby API as lobby_client calls it: one lobby, two players, scripted answers."""
+
+    def __init__(self):
+        self.calls = []
+        self.lobby = None
+        self.fail = None            # an exception the next call raises
+        self.public = [{'code': 'AB123', 'host': 'Bo', 'players': 1, 'age': 130}]
+
+    def _go(self, name, *args):
+        self.calls.append((name, *args))
+        if self.fail:
+            err, self.fail = self.fail, None
+            raise err
+
+    def view(self, **kw):
+        lobby = {'code': 'K7M2Q', 'public': False, 'state': 'open', 'waiting': None, 'rules': dict(RU.DEFAULTS),
+                 'players': [{'name': 'iksperial', 'ready': False, 'launch': False, 'roster': 'unknown', 'stage': 'lobby'}],
+                 **kw}
+        return lobby
+
+    def create(self, name, ext, public=False, roster_crc=None):
+        self._go('create', name, ext, public)
+        self.lobby = self.view(public=public)
+        return {'token': 'secret-token', 'you': 0, 'lobby': self.lobby}
+
+    def join(self, code, name, ext, roster_crc=None):
+        self._go('join', code, name, ext)
+        self.lobby = self.view()
+        self.lobby['players'].insert(0, {'name': 'Bo', 'ready': False, 'launch': False, 'roster': 'unknown', 'stage': 'lobby'})
+        return {'token': 'secret-token', 'you': 1, 'lobby': self.lobby}
+
+    def ready(self, code, token, value=True):
+        self._go('ready', code, token, value)
+        return {**self.lobby, 'you': 0}
+
+    def settings(self, code, token, rules):
+        self._go('settings', code, token, rules)
+        self.lobby = {**self.lobby, 'rules': {**RU.DEFAULTS, **(self.lobby.get('rules') or {}), **rules}}
+        for p in self.lobby['players']:
+            p['ready'] = False
+        return {**self.lobby, 'you': 0}
+
+    def say(self, code, token, text):
+        self._go('say', code, token, text)
+        chat = (self.lobby.get('chat') or []) + [{'n': len(self.lobby.get('chat') or []) + 1, 'who': 0, 'name': 'iksperial',
+                                                  'text': text}]
+        self.lobby = {**self.lobby, 'chat': chat}
+        return {**self.lobby, 'you': 0}
+
+    def state(self, code, token):
+        self._go('state', code, token)
+        return {**self.lobby, 'you': 0}
+
+    def leave(self, code, token):
+        self._go('leave', code, token)
+        return {}
+
+    def lobbies(self):
+        self._go('lobbies')
+        return {'lobbies': self.public}
+
+
+@pytest.fixture
+def mp(tmp_path):
+    ctl = FakeCtl(tmp_path)
+    part = MC.MultiplayerCtl(ctl)
+    part.threads = False
+    part.hud_ok = lambda: False         # tests never draw over a real screen
+    part.service = FakeService()
+    part.make_client = lambda url: part.service
+    part.sleep = lambda s: None
+    return part
+
+
+def log_in(tmp_path, monkeypatch, account=16349, npid='iksperial'):
+    user = tmp_path / 'user'
+    (user / 'log').mkdir(parents=True, exist_ok=True)
+    (user / 'log' / 'shad_log.txt').write_bytes(
+        f"[Lib.Np] ConnectUser: user_id=1000 signed in npid='{npid}' accountId={account}\n".encode())
+    monkeypatch.setattr(gamesetup, 'emu_user_dir', lambda emu: str(user))
+    monkeypatch.setattr(gamesetup, 'shadnet_users', lambda d: [{'npid': npid}])
+    return user
+
+
+def good_checks(part, tone='good'):
+    part.look = lambda: part.__dict__.update(checks=[{'key': 'patch', 'label': 'Patch', 'tone': tone,
+                                                       'text': 'on and intact' if tone == 'good' else 'not patched',
+                                                       'go': None}]) or part.checks
+
+
+# --- who I am -----------------------------------------------------------------------------------------------------
+def test_the_id_comes_from_the_log_and_a_typed_one_wins(mp, tmp_path, monkeypatch):
+    log_in(tmp_path, monkeypatch)
+    mp._checks = lambda emu: []
+    assert mp.ext() == (None, '') and mp.view()['you']['ext'] is None          # not looked yet
+    mp.look()
+    v = mp.view()['you']
+    assert (v['ext'], v['ext_from'], v['name'], v['name_from']) == (16349, 'log', 'iksperial', 'game')
+    assert mp.set_ext('777') == {'ok': True}
+    assert mp.view()['you']['ext'] == 777 and mp.view()['you']['ext_from'] == 'typed'
+    assert mp.ctl.prefs['multiplayer']['ext'] == 777
+    assert mp.set_ext('') == {'ok': True} and mp.view()['you']['ext_from'] == 'log'
+    for bad in ('abc', '-4', '0', '1234567890123', '16 349'):
+        assert 'number' in mp.set_ext(bad)['error'], bad
+    assert mp.view()['you']['ext_from'] == 'log'
+
+
+def test_name_is_trimmed_and_remembered(mp):
+    mp.set_name('  Puck   Fan ' + 'x' * 40)
+    assert mp.name == ('Puck Fan ' + 'x' * 40)[:MC.NAME_MAX]
+    again = MC.MultiplayerCtl(mp.ctl)
+    assert again.name == mp.name
+
+
+def test_no_id_no_lobby(mp):
+    mp.set_name('Me')
+    out = mp.create()
+    assert 'ShadNet id' in out['error'] and mp.service.calls == [] and mp.view()['error'] == out['error']
+    mp.set_ext('5')
+    mp.set_name('')
+    assert 'name' in mp.create()['error'] and mp.service.calls == []
+
+
+# --- the lobby calls ----------------------------------------------------------------------------------------------
+def start_lobby(mp, ext='16349'):
+    mp.set_name('iksperial')
+    mp.set_ext(ext)
+    assert mp.create(public=True) == {'ok': True}
+
+
+def test_create_shows_the_lobby_and_never_the_token(mp):
+    start_lobby(mp)
+    assert mp.service.calls[0] == ('create', 'iksperial', 16349, True)
+    v = mp.view()
+    assert v['lobby']['code'] == 'K7M2Q' and v['lobby']['players'][0]['you'] is True and v['lobby']['partner'] == ''
+    assert 'secret-token' not in json.dumps(v) and mp.token == 'secret-token'
+    assert 'Leave' in mp.create()['error']      # one lobby at a time
+
+
+def test_join_validates_the_code_before_asking(mp):
+    mp.set_name('Me')
+    mp.set_ext('5')
+    assert 'lobby code' in mp.join('??')['error'] and mp.service.calls == []
+    assert mp.join(' k7m2q ') == {'ok': True}
+    assert mp.service.calls[0] == ('join', 'K7M2Q', 'Me', 5)
+    v = mp.view()['lobby']
+    assert [p['name'] for p in v['players']] == ['Bo', 'iksperial'] and v['partner'] == 'Bo' and v['players'][1]['you']
+
+
+def test_a_refused_call_says_why_in_the_servers_words(mp):
+    mp.set_name('Me')
+    mp.set_ext('5')
+    mp.service.fail = LC.LobbyRefused(409, 'the lobby is full')
+    assert mp.join('K7M2Q') == {'error': 'the lobby is full'} and mp.view()['error'] == 'the lobby is full'
+    assert mp.view()['lobby'] is None and mp.busy == ''
+
+
+def test_an_unreachable_service_is_told_and_recovers(mp):
+    start_lobby(mp)
+    mp.service.fail = LC.LobbyDown('x')
+    mp.poll_once()
+    assert mp.view()['error'] == ''                      # one miss is not news
+    mp.service.fail = LC.LobbyDown('x')
+    mp.poll_once()
+    assert 'did not answer' in mp.view()['error'] and mp.view()['lobby'] is not None
+    mp.poll_once()
+    assert mp.view()['error'] == ''
+
+
+def test_the_server_row_follows_the_public_list_ask(mp):
+    mp._lobbies()
+    assert {r['key']: r['tone'] for r in mp.view()['checks']}['server'] == 'good'
+    assert mp.view()['lobbies'] == [{'code': 'AB123', 'host': 'Bo', 'players': 1, 'age': '2 min'}]
+    mp.service.fail = LC.LobbyDown('x')
+    mp._lobbies()
+    row = [r for r in mp.view()['checks'] if r['key'] == 'server'][0]
+    assert row['tone'] == 'bad' and row['text'] == 'not reachable' and 'Check again' in mp.view()['error']
+
+
+def test_a_gone_lobby_is_left_with_a_note(mp):
+    start_lobby(mp)
+    mp.service.fail = LC.LobbyRefused(404, 'no such lobby')
+    mp.poll_once()
+    v = mp.view()
+    assert v['lobby'] is None and 'gone' in v['error'] and mp.token is None
+    assert mp.create() == {'ok': True}                    # free to start another
+
+
+def test_leave_forgets_the_lobby_even_when_the_service_is_gone(mp):
+    start_lobby(mp)
+    mp.service.fail = LC.LobbyDown('x')
+    assert mp.leave() == {'ok': True} and mp.view()['lobby'] is None
+    assert mp.leave() == {'ok': True}                     # nothing to leave
+
+
+def test_leaving_shows_the_public_list_again(mp):
+    mp._spawn = lambda work, name: work()
+    start_lobby(mp)
+    assert mp.lobbies == []
+    mp.leave()
+    assert [r['code'] for r in mp.view()['lobbies']] == ['AB123'] and mp.ctl.pushed[-1] == 'multiplayer'
+
+
+def test_ready_and_the_launch_trigger(mp):
+    start_lobby(mp)
+    started = []
+    mp._start_job = lambda: started.append(1)
+    mp.service.lobby['players'].append({'name': 'Bo', 'ready': False, 'launch': False, 'roster': 'unknown', 'stage': 'lobby'})
+    mp.service.lobby.update(state='full')
+    assert mp.ready(True) == {'ok': True} and started == []
+    assert mp.service.calls[-1] == ('ready', 'K7M2Q', 'secret-token', True)
+    mp.service.lobby.update(state='launching')
+    mp.poll_once()
+    mp.poll_once()
+    assert started == [1]                                 # once per launch, not once per poll
+    mp.service.lobby.update(state='matched')
+    mp.poll_once()
+    assert started == [1]
+    mp.service.lobby.update(state='full')                 # someone un-readied: the next launch counts again
+    mp.poll_once()
+    mp.service.lobby.update(state='launching')
+    mp.poll_once()
+    assert started == [1, 1]
+
+
+def test_launch_now_needs_a_launching_lobby(mp):
+    start_lobby(mp)
+    assert 'ready first' in mp.launch_now()['error']
+    started = []
+    mp._start_job = lambda: started.append(1)
+    mp.lobby['state'] = 'launching'
+    assert mp.launch_now() == {'ok': True} and started == [1]
+
+
+# --- the game start -----------------------------------------------------------------------------------------------
+class Rig:
+    """Fakes for the hook, shadPS4 and the key presses. `running` answers from `seq` (then False): the launch asks once
+    before it starts, then the watch asks until the game closes."""
+
+    def __init__(self, mp, monkeypatch, seq=(False, True, True, False), start_error=None):
+        self.events, self.seq = [], list(seq)
+        mp.running = lambda: self.seq.pop(0) if self.seq else False
+        mp.press = lambda key: self.events.append(('press', key)) or True
+        mp.sleep = lambda s: self.events.append(('sleep', s))
+        mp.now = lambda: 1000.0
+        monkeypatch.setattr(overlay, 'set_menus', self.set_menus)
+        monkeypatch.setattr(launch, 'start', self.start)
+        monkeypatch.setattr(keypress, 'cross_key', lambda emu: 'n')
+        self.start_error = start_error
+
+    def set_menus(self, game_dir, launch_opts, running=None):
+        self.events.append(('hook', launch_opts))
+
+    def start(self, emu, game_dir):
+        self.events.append(('started', game_dir))
+        if self.start_error:
+            raise self.start_error
+        return types.SimpleNamespace(pid=1)
+
+
+def kinds(rig):
+    return [e[0] for e in rig.events if e[0] != 'sleep']
+
+
+def test_the_game_start_bakes_the_hook_starts_presses_and_takes_it_off(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch)
+    start_lobby(mp)
+    mp._launch_job()
+    assert kinds(rig) == ['hook', 'started', 'press', 'press', 'hook']
+    assert rig.events[0] == ('hook', {'until': 1000 + MC.HOOK_SECONDS}) and rig.events[-1] == ('hook', None)
+    assert [e for e in rig.events if e[0] == 'press'] == [('press', 'n'), ('press', 'n')]
+    assert ('sleep', MC.BOOT_WAIT) in rig.events and ('sleep', MC.TITLE_GAP) in rig.events
+    assert mp.game['phase'] == 'ended'
+
+
+def test_without_the_press_setting_the_card_says_what_to_press(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch)
+    start_lobby(mp)
+    mp.set_press(False)
+    mp._launch_job()
+    assert 'press' not in kinds(rig) and kinds(rig)[0] == 'hook' and kinds(rig)[-1] == 'hook'
+    mp.game = {'phase': 'title', 'note': '', 'manual': True}
+    steps = mp.view()['game']['steps']
+    assert steps[2] == {'text': 'Press ✕ on the title screen', 'state': 'now'}
+
+
+def test_a_press_that_found_no_window_turns_the_card_manual(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch)
+    mp.press = lambda key: False
+    start_lobby(mp)
+    mp._launch_job()
+    assert kinds(rig).count('hook') == 2 and mp.game['phase'] == 'ended'
+
+
+def test_the_hook_comes_off_when_the_game_will_not_start(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch, start_error=launch.LaunchError('shadPS4 not found: x'))
+    start_lobby(mp)
+    mp._launch_job()
+    assert kinds(rig) == ['hook', 'started', 'hook'] and rig.events[-1] == ('hook', None)
+    assert mp.game['phase'] == 'failed' and 'shadPS4 not found' in mp.game['note']
+
+
+def test_an_unpatched_game_is_not_started(mp, monkeypatch):
+    good_checks(mp, tone='bad')
+    rig = Rig(mp, monkeypatch)
+    start_lobby(mp)
+    mp._launch_job()
+    assert rig.events == [] and mp.game['phase'] == 'failed' and 'Patch the game first' in mp.game['note']
+    mp.lobby['state'] = 'launching'
+    assert mp.view()['game']['again'] is True
+
+
+def test_a_running_game_is_a_rematch_with_no_hook(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch, seq=(True, True, False))
+    start_lobby(mp)
+    mp._launch_job()
+    assert 'hook' not in kinds(rig) and 'started' not in kinds(rig)
+    assert mp.game['phase'] == 'ended'
+
+
+def test_a_hook_that_cannot_come_off_while_the_game_runs_waits_for_it(mp, monkeypatch):
+    rig = Rig(mp, monkeypatch, seq=(True,))
+    tries = []
+
+    def set_menus(game_dir, opts, running=None):
+        tries.append(opts)
+        if len(tries) == 1:
+            raise overlay.PatchError('shadPS4 is running: close the game first')
+    monkeypatch.setattr(overlay, 'set_menus', set_menus)
+    mp._unhook('game')
+    assert tries == [None, None] and ('sleep', MC.WATCH_POLL) in rig.events
+
+
+def test_a_stale_hook_is_cleared_only_while_the_game_is_off(mp, monkeypatch):
+    calls = []
+    monkeypatch.setattr(overlay, 'status', lambda d: {'layers': {'menus': {'autoplay_until': 5}}})
+    monkeypatch.setattr(overlay, 'set_menus', lambda d, opts, running=None: calls.append(opts))
+    mp.running = lambda: True
+    mp._clear_stale_hook()
+    assert calls == []
+    mp.running = lambda: False
+    mp._clear_stale_hook()
+    assert calls == [None]
+    monkeypatch.setattr(overlay, 'status', lambda d: {'layers': {'menus': {}}})
+    mp._clear_stale_hook()
+    assert calls == [None]
+
+
+def test_the_card_follows_the_games_progress(mp, monkeypatch):
+    start_lobby(mp)
+    mp.lobby = {**mp.service.lobby, 'state': 'launching',
+                'players': [{'name': 'iksperial', 'ready': True, 'stage': 'lobby', 'roster': 'ok'},
+                            {'name': 'Bo', 'ready': True, 'stage': 'lobby', 'roster': 'ok'}]}
+
+    def states():
+        return [s['state'] for s in mp.view()['game']['steps']]
+    for phase, expect in (('hook', 'now todo todo todo todo todo'), ('starting', 'done now todo todo todo todo'),
+                          ('title', 'done done now todo todo todo'), ('ready', 'done done done now todo todo'),
+                          ('running', 'done done done done now todo')):
+        mp.game = {'phase': phase, 'note': '', 'manual': False}
+        assert ' '.join(states()) == expect, phase
+    mp.lobby['state'] = 'matched'
+    assert ' '.join(states()) == 'done done done done done now'
+    assert mp.view()['game']['steps'][3]['text'] == 'Game Setup: pressing READY'
+    assert mp.view()['game']['steps'][4]['text'] == 'Online Versus, searching for Bo'
+    mp.game = {'phase': 'running', 'note': '', 'manual': False, 'ready_manual': True}
+    assert mp.view()['game']['steps'][3]['text'] == 'Press ✕ (READY) on Game Setup'
+    json.dumps(mp.view())
+
+
+# --- READY on Game Setup ------------------------------------------------------------------------------------------
+class Clock:
+    """A clock that moves on sleep, and the server's stage for me: `stages` is [(from second, stage)], and a READY
+    press can move it (`after_press`)."""
+
+    def __init__(self, mp, stages=((0, 'lobby'),), after_press=None, until=600):
+        self.t, self.presses, self.stages, self.after_press = 0.0, [], list(stages), after_press
+        mp.now = lambda: self.t
+        mp.sleep = self.sleep
+        mp.running = lambda: self.t < until
+        mp.press = self.press
+        mp._my_stage = self.stage
+
+    def sleep(self, s):
+        self.t += s
+
+    def press(self, key):
+        self.presses.append(self.t)
+        if self.after_press:
+            self.stages.append((self.t, self.after_press))
+        return True
+
+    def stage(self):
+        return [s for at, s in self.stages if at <= self.t][-1]
+
+
+def ready_rig(mp, monkeypatch, **kw):
+    monkeypatch.setattr(keypress, 'cross_key', lambda emu: 'n')
+    mp.game = {'phase': 'title', 'note': '', 'manual': False}
+    return Clock(mp, **kw)
+
+
+def test_ready_waits_for_game_setup_then_presses_once(mp, monkeypatch):
+    c = ready_rig(mp, monkeypatch, stages=((0, 'lobby'), (40, 'setup')), after_press='searching')
+    mp._ready('emu')
+    assert len(c.presses) == 1 and 40 + MC.READY_SETTLE <= c.presses[0] < 40 + MC.READY_SETTLE + 2 * MC.WATCH_POLL
+    assert not mp.game.get('ready_manual')
+
+
+def test_a_title_press_that_was_ready_gets_no_extra_press(mp, monkeypatch):
+    c = ready_rig(mp, monkeypatch, stages=((0, 'setup'), (MC.READY_SETTLE - 1, 'searching')))
+    mp._ready('emu')
+    assert c.presses == [] and not mp.game.get('ready_manual')
+
+
+def test_ready_presses_again_while_no_search_starts(mp, monkeypatch):
+    c = ready_rig(mp, monkeypatch, stages=((0, 'setup'),))
+    mp._ready('emu')
+    assert len(c.presses) == MC.READY_TRIES
+    assert all(b - a >= MC.READY_GAP for a, b in zip(c.presses, c.presses[1:]))
+    assert mp.game['ready_manual'] is True and mp.game['phase'] == 'ready'
+
+
+def test_a_server_that_never_says_setup_gets_a_late_ready(mp, monkeypatch):
+    c = ready_rig(mp, monkeypatch, stages=((0, 'lobby'),), after_press='searching')
+    mp._ready('emu')
+    assert len(c.presses) == 1 and MC.READY_BLIND <= c.presses[0] < MC.READY_BLIND + MC.WATCH_POLL
+
+
+def test_game_setup_after_a_blind_press_gets_ready_soon(mp, monkeypatch):
+    # lab mp3b: the blind press was the one that left the title screen, and Game Setup came later; a retry due just
+    # then waits for the screen too
+    late = MC.READY_BLIND + MC.READY_GAP + 1
+    c = ready_rig(mp, monkeypatch, stages=((0, 'lobby'), (late, 'setup')))
+    c.after_press = None
+    mp._ready('emu')
+    assert MC.READY_BLIND <= c.presses[0] < MC.READY_BLIND + MC.WATCH_POLL
+    assert late + MC.READY_SETTLE <= c.presses[1] < late + MC.READY_SETTLE + 2 * MC.WATCH_POLL
+
+
+def test_a_search_started_by_hand_needs_no_ready(mp, monkeypatch):
+    c = ready_rig(mp, monkeypatch, stages=((0, 'lobby'), (10, 'searching')))
+    mp._ready('emu')
+    assert c.presses == [] and not mp.game.get('ready_manual')
+
+
+def test_ready_is_manual_without_presses_or_after_a_manual_title(mp, monkeypatch):
+    c = ready_rig(mp, monkeypatch)
+    mp.set_press(False)
+    mp._ready('emu')
+    assert c.presses == [] and mp.game['ready_manual'] is True
+    mp.set_press(True)
+    mp.game = {'phase': 'title', 'note': '', 'manual': True}
+    mp._ready('emu')
+    assert c.presses == [] and mp.game['ready_manual'] is True
+
+
+def test_ready_stops_when_the_game_closes(mp, monkeypatch):
+    c = ready_rig(mp, monkeypatch, until=20)
+    mp._ready('emu')
+    assert c.presses == [] and c.t < 30
+
+
+# --- the lobby address, the checks, the keys ----------------------------------------------------------------------
+def test_the_lobby_is_the_server_the_game_is_patched_to(mp):
+    assert mp.url() == 'https://ot.puckpeak.com'
+    mp.url_override = 'https://evil.example.com'
+    with pytest.raises(LC.LobbyRefused, match='must be the server Setup uses'):
+        mp.url()
+    mp.url_override = 'http://127.0.0.1:8081'
+    with pytest.raises(LC.LobbyRefused):
+        mp.url()                                           # a lab address only counts when Setup's server is the lab
+    mp.ctl.setup.server['host'] = '127.0.0.1'
+    assert mp.url() == 'http://127.0.0.1:8081'
+    mp.url_override = 'https://evil.example.com'
+    with pytest.raises(LC.LobbyRefused):
+        mp.url()
+
+
+def test_checks_read_the_patch_and_the_roster(mp, monkeypatch):
+    status = {'installed': True, 'intact': True}
+    layers = {'menus': {}, 'database': {}}
+    monkeypatch.setattr(gamesetup, 'status', lambda emu: status)
+    monkeypatch.setattr(overlay, 'status', lambda d: {'layers': layers, 'problems': []})
+    got = {c['key']: (c['tone'], c['text']) for c in mp._checks('emu.exe')}
+    assert got == {'roster': ('good', 'Overtime roster'), 'patch': ('good', 'on and intact')}
+    layers.pop('database')
+    assert mp._checks('emu.exe')[0]['tone'] == 'caution' and mp._checks('emu.exe')[0]['go'] == 'update'
+    layers.pop('menus')
+    assert mp._checks('emu.exe')[1]['tone'] == 'bad'
+    status['intact'] = False
+    assert 'not patched' in mp._checks('emu.exe')[1]['text']
+    assert mp._checks('')[1]['go'] == 'setup'
+
+
+def test_the_cross_key_comes_from_the_players_own_map(tmp_path, monkeypatch):
+    user = tmp_path / 'user'
+    (user / 'input_config').mkdir(parents=True)
+    monkeypatch.setattr(gamesetup, 'emu_user_dir', lambda emu: str(user))
+    assert keypress.cross_key('emu.exe') == 'n'                              # no map: the default profile's key
+    ini = user / 'input_config' / 'default.ini'
+    ini.write_text('# Keyboard bindings\ncross = kp2\n# Alternatives\ncross = N\nsquare = v\n'
+                   '# Controller bindings\ncross = cross\n', encoding='utf-8')
+    assert keypress.cross_key('emu.exe') == 'n'
+    ini.write_text('cross = kp2\ncross = x\n# Controller bindings\ncross = z\n', encoding='utf-8')
+    assert keypress.cross_key('emu.exe') == 'x'
+    ini.write_text('cross = kp2\n# Controller bindings\ncross = z\n', encoding='utf-8')
+    assert keypress.cross_key('emu.exe') == 'n'                              # the pad section is not a keyboard key
+
+
+def test_a_press_needs_one_key():
+    assert keypress.press('nn') is False and keypress.press('') is False
+
+
+def test_polling_stops_when_there_is_no_lobby_and_no_tab(mp):
+    mp.shown_now = False
+    mp.poll_once = lambda: pytest.fail('asked the service')
+    mp._poll_loop()                                         # returns at once
+
+
+# --- match rules (docs/plans/m3b-match-settings.md) ---------------------------------------------------------------
+def test_the_host_picks_a_rule_and_the_card_shows_it(mp):
+    start_lobby(mp)
+    card = mp.view()['lobby']['rules']
+    assert card['can_edit'] and card['is_default'] and card['summary'] == 'Default rules'
+    assert [r['key'] for r in card['rows']] == list(RU.KEYS)
+    assert mp.set_rule('periodlength', 10) == {'ok': True}
+    assert mp.service.calls[-1] == ('settings', 'K7M2Q', 'secret-token', {'periodlength': '10'})
+    card = mp.view()['lobby']['rules']
+    assert not card['is_default'] and card['summary'] == '10 min'
+    assert next(r for r in card['rows'] if r['key'] == 'periodlength')['value'] == '10'
+    assert 'secret-token' not in json.dumps(mp.view())
+
+
+def test_the_partner_sees_the_rules_but_cannot_change_them(mp):
+    mp.set_name('Me')
+    mp.set_ext('5')
+    mp.join('K7M2Q')                         # the fake puts the partner first: this player is the guest (you = 1)
+    card = mp.view()['lobby']['rules']
+    assert not card['can_edit'] and not any(r['can_edit'] for r in card['rows'])
+    mp.service.calls.clear()
+    assert 'host' in mp.set_rule('periodlength', 10)['error']
+    assert mp.service.calls == []
+
+
+def test_a_bad_rule_is_refused_before_asking(mp):
+    start_lobby(mp)
+    mp.service.calls.clear()
+    assert 'choices' in mp.set_rule('periodlength', 7)['error']
+    assert 'Unknown' in mp.set_rule('nope', 1)['error']
+    assert mp.service.calls == []
+
+
+def test_the_rules_are_fixed_once_the_game_is_starting(mp):
+    start_lobby(mp)
+    mp.lobby['state'] = 'launching'
+    assert not mp.view()['lobby']['rules']['can_edit']
+    mp.service.calls.clear()
+    assert 'fixed' in mp.set_rule('periodlength', 10)['error'] and mp.service.calls == []
+
+
+def test_the_launch_bakes_the_lobbys_rules_only_when_they_are_not_the_defaults(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch)
+    start_lobby(mp)
+    mp._launch_job()
+    assert rig.events[0] == ('hook', {'until': 1000 + MC.HOOK_SECONDS})         # defaults: nothing baked
+    mp.set_rule('periodlength', 10)
+    mp.set_rule('fighting', 0)
+    rig = Rig(mp, monkeypatch)
+    mp._launch_job()
+    baked = rig.events[0][1]
+    assert baked['rules']['periodlength'] == '10' and baked['rules']['fighting'] == '0' and baked['until'] == 1000 + MC.HOOK_SECONDS
+
+
+def test_a_running_game_keeps_its_rules_and_the_card_says_so(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch, seq=(True, True, False))
+    start_lobby(mp)
+    mp.set_rule('periodlength', 15)
+    notes = []
+    real = mp._phase
+    mp._phase = lambda phase, note='', **kw: notes.append((phase, note)) or real(phase, note, **kw)
+    mp._launch_job()
+    assert 'hook' not in kinds(rig)
+    assert any(ph == 'rematch' and 'keeps the rules' in note for ph, note in notes)
+
+
+def test_reset_puts_every_rule_back(mp):
+    start_lobby(mp)
+    mp.set_rule('periodlength', 20)
+    assert not mp.view()['lobby']['rules']['is_default']
+    assert mp.reset_rules() == {'ok': True}
+    assert mp.service.calls[-1][3] == RU.DEFAULTS and mp.view()['lobby']['rules']['is_default']
+
+
+def test_the_guest_bakes_the_hosts_rules_and_cannot_change_them(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch)
+    mp.set_name('Me')
+    mp.set_ext('5')
+    mp.join('K7M2Q')                         # the guest: the fake lists the partner first
+    picked = {**RU.DEFAULTS, 'periodlength': '15', 'icing': '0'}
+    mp.service.lobby = {**mp.service.lobby, 'rules': picked, 'state': 'launching'}
+    mp.poll_once()                           # the polled state carries what the host picked
+    assert mp.view()['lobby']['rules']['summary'] == RU.summary(picked) and not mp.view()['lobby']['rules']['can_edit']
+    mp._launch_job()
+    assert rig.events[0][1]['rules'] == picked
+    mp.service.calls.clear()
+    assert mp.set_rule('periodlength', 4)['error'] and mp.service.calls == []
+
+
+def test_a_server_without_match_rules_shows_no_card_and_bakes_nothing(mp, monkeypatch):
+    good_checks(mp)
+    rig = Rig(mp, monkeypatch)
+    start_lobby(mp)
+    mp.lobby = {k: v for k, v in mp.lobby.items() if k != 'rules'}     # a lobby from a server before M3b
+    assert mp.view()['lobby']['rules'] is None
+    mp._launch_job()
+    assert rig.events[0] == ('hook', {'until': 1000 + MC.HOOK_SECONDS})

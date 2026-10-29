@@ -1,0 +1,79 @@
+# --- Never commit game data or anything extracted from it ---
+*.bin
+*.bin-decrypted
+*.big
+*.viv
+*.prx
+*.sprx
+*.elf
+*.self
+*.pkg
+*.sfo
+*.plt
+re/captures/
+re/extract/
+re/ghidra/
+re/dumps/
+*.gpr
+*.rep/
+
+# Saves and rosters pulled from a real game
+saves/
+*.roster
+SAVEDATA/
+
+# Secrets
+.env
+*.pem
+*.key
+*.token
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.hypothesis/
+build/
+dist/
+dist/*.exe
+.venv-build/
+*.spec.bak
+
+# Runtime data
+*.sqlite
+*.sqlite3
+*.db-journal
+data/
+logs/
+*.log
+
+# OS / editors
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+# Local dev certificates and state
+.dev/
+
+# Exe build: packs baked into OvertimeNHL19.exe (made from the owner's own game files)
+packs/
+
+# Clickable mockups and their fixtures (made from game data)
+private/
+
+# Maintainer working notes, lab and server code (kept in the maintainer's private repository, not for players)
+PLAN.md
+CLAUDE.md
+.claude/
+docs/notes/
+docs/plans/
+docs/release/
+docs/ui/
+re/
+tools/
+overtime_server/
+deploy/

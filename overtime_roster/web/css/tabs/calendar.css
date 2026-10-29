@@ -1,0 +1,166 @@
+/* Calendar (.tab-calendar, prefix ca-): Legacy's month page and side column in NHL 19's look. Home games in the
+   game's orange-red (#FF5D54, "vs"), away games in its cobalt blue (#007EEC, "@"). The sync pop-up (.ca-sync) is
+   drawn at window level, so its rules are not under .tab-calendar. */
+.tab-calendar .ca { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(250px, 23vw, 320px);
+  gap: var(--gap); }
+.tab-calendar .ca-month { min-width: 0; }
+
+/* the month's head: ‹ October 2026 › Today ... EDM's games | All NHL games */
+.tab-calendar .ca-head { gap: 8px; flex-wrap: wrap; row-gap: 5px; }
+.tab-calendar .ca-arrow { flex: none; width: 28px; height: 24px; padding: 0 0 3px; border: 0; background: var(--tile);
+  color: var(--text); font-size: 20px; line-height: 1; cursor: pointer; box-shadow: inset 0 0 0 1px var(--line-hi);
+  transition: background-color .15s, box-shadow .15s; }
+.tab-calendar .ca-arrow:hover:not(:disabled) { background: var(--tile-hi);
+  box-shadow: inset 0 0 0 1px var(--line-hi), inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tab-calendar .ca-arrow:disabled { color: var(--text-off); cursor: default; box-shadow: inset 0 0 0 1px var(--line); }
+.tab-calendar .card-head .ca-title { flex: none; min-width: 140px; text-align: center; font-size: 16px; }
+.tab-calendar .ca-mode button { padding: 3px 11px; font-size: 13px; }
+
+/* the days: Monday first, whole weeks */
+.tab-calendar .ca-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: auto repeat(var(--weeks), minmax(0, 1fr)); gap: 3px; padding: 8px 10px; }
+.tab-calendar .ca-wd { padding-bottom: 2px; text-align: center; font-size: 12.5px; letter-spacing: .1em; color: var(--text-3); }
+.tab-calendar .ca-day { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  align-items: flex-start; gap: 1px; padding: 5px 7px; overflow: hidden; text-align: left; border: 0; background: var(--tile);
+  color: var(--text); font: inherit; cursor: pointer; transition: background-color .12s; }
+.tab-calendar .ca-day:hover { background: var(--tile-hi); }
+.tab-calendar .ca-day.none { background: rgba(38, 42, 49, .45); }
+.tab-calendar .ca-day.out { opacity: .36; }
+.tab-calendar .ca-day .n { font-size: 12.5px; font-weight: 700; line-height: 1.3; color: var(--text-3); }
+.tab-calendar .ca-day.today .n { padding: 0 5px; background: var(--text-soft); color: var(--black); }
+.tab-calendar .ca-day.home { background: linear-gradient(rgba(255, 93, 84, .26), rgba(255, 93, 84, .07));
+  box-shadow: inset 3px 0 0 var(--accent); }
+.tab-calendar .ca-day.away { background: linear-gradient(rgba(0, 126, 236, .3), rgba(0, 126, 236, .08));
+  box-shadow: inset 3px 0 0 var(--blue); }
+.tab-calendar .ca-day.home:hover { background: linear-gradient(rgba(255, 93, 84, .34), rgba(255, 93, 84, .12)); }
+.tab-calendar .ca-day.away:hover { background: linear-gradient(rgba(0, 126, 236, .38), rgba(0, 126, 236, .13)); }
+.tab-calendar .ca-day.sel { outline: 0; background: var(--tile-hi); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tab-calendar .ca-day.home.sel { box-shadow: inset 3px 0 0 var(--accent), inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tab-calendar .ca-day.away.sel { box-shadow: inset 3px 0 0 var(--blue), inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tab-calendar .ca-day .g { font-family: var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style);
+  font-weight: 700; font-size: 19px; line-height: 1.15; letter-spacing: .03em; white-space: nowrap; }
+.tab-calendar .ca-day .g .at { font-size: 13px; font-weight: 600; }
+.tab-calendar .ca-day.home .g { color: var(--accent); }
+.tab-calendar .ca-day.away .g { color: #3D9EF5; }
+.tab-calendar .ca-day.away .g .at { color: var(--blue); filter: brightness(1.25); }
+.tab-calendar .ca-day .cnt { margin-top: auto; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.tab-calendar .ca-day .cnt i { font-style: normal; }
+.tab-calendar .ca-day .cnt.big { margin-top: 2px; font-family: var(--font-head); font-stretch: var(--head-stretch);
+  font-style: var(--head-style); font-size: 22px; font-weight: 700; line-height: 1.1; color: var(--text); }
+.tab-calendar .ca-day .cnt.big i { margin-left: 2px; font-family: var(--font); font-stretch: normal; font-style: normal;
+  font-size: 12px; font-weight: 600; color: var(--text-3); }
+
+/* the foot: the key, the sync line, My season */
+.tab-calendar .ca-foot { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 7px 12px;
+  border-top: 1px solid var(--line); font-size: 13px; color: var(--text-2); }
+.tab-calendar .ca-legend { display: inline-flex; align-items: center; gap: 7px; }
+.tab-calendar .ca-key { display: inline-grid; place-items: center; min-width: 24px; height: 18px; padding: 0 6px;
+  font: 700 13px/1 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style); }
+.tab-calendar .ca-key.home { background: rgba(255, 93, 84, .22); color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+.tab-calendar .ca-key.away { background: rgba(0, 126, 236, .26); color: #3D9EF5; box-shadow: inset 2px 0 0 var(--blue); }
+.tab-calendar .ca-sync-line { display: inline-flex; align-items: center; gap: 8px; }
+.tab-calendar .ca-season { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; }
+.tab-calendar .ca-season.off { color: var(--text-3); }
+
+/* the side: the team, a day, the team's games */
+.tab-calendar .ca-side { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--gap); }
+.tab-calendar .ca-side > .card:not(.grow) { flex: none; }
+.tab-calendar .ca-team .card-body { padding-top: 9px; }
+.tab-calendar .ca-tiles { display: flex; gap: 6px; }
+.tab-calendar .ca-tile { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 4px 9px 5px; background: var(--tile); }
+.tab-calendar .ca-tile.home { box-shadow: inset 0 -2px 0 var(--accent); }
+.tab-calendar .ca-tile.away { box-shadow: inset 0 -2px 0 var(--blue); }
+.tab-calendar .ca-tile b { font: 700 22px/1.15 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style);
+  color: var(--text); }
+.tab-calendar .ca-tile span { font-size: 12px; color: var(--text-2); }
+.tab-calendar .ca-next { margin-top: 8px; font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.tab-calendar .ca-next b { color: var(--text); }
+
+.tab-calendar .ca-daycard { flex: 0 1 auto !important; max-height: 48%; }
+.tab-calendar .ca-daycard:only-child { max-height: none; }
+.tab-calendar .ca-daycard .card-head .aside { flex: none; white-space: nowrap; }
+.tab-calendar .ca-daycard .short { display: none; }
+.tab-calendar .ca-x { border: 0; padding: 0 2px; background: transparent; color: var(--text-3); font-size: 14px; cursor: pointer; }
+.tab-calendar .ca-x:hover { color: var(--text); }
+.tab-calendar .ca-games { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; }
+.tab-calendar .ca-match { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: var(--tile); font-size: 13px; }
+.tab-calendar .ca-match.mine { background: var(--tile-hi); box-shadow: inset 3px 0 0 var(--accent); }
+.tab-calendar .ca-match .at { font-size: 11.5px; color: var(--text-3); }
+.tab-calendar .ca-match .names { flex: 1; min-width: 0; color: var(--text-2); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+
+.tab-calendar .ca-list { min-height: 130px; }
+.tab-calendar .ca-months { padding: 0 8px 8px; }
+.tab-calendar .ca-mlabel { position: sticky; top: 0; z-index: 1; padding: 7px 4px 3px; font-size: 12.5px; letter-spacing: .1em;
+  color: var(--text-3); background: #1b2028; }
+.tab-calendar .ca-row { width: 100%; display: grid; grid-template-columns: 88px 26px minmax(0, 1fr); align-items: center; gap: 4px;
+  height: 25px; padding: 0 6px; text-align: left; border: 0; background: transparent; color: var(--text); font: inherit;
+  font-size: 13.5px; cursor: pointer; }
+.tab-calendar .ca-row:hover { background: var(--tile); }
+.tab-calendar .ca-row.sel { background: var(--tile-hi); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tab-calendar .ca-row.past, .tab-calendar .ca-row.past .ha { color: var(--text-3); }
+.tab-calendar .ca-row .ha { font: 700 13.5px/1 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style); }
+.tab-calendar .ca-row .ha.home { color: var(--accent); }
+.tab-calendar .ca-row .ha.away { color: #3D9EF5; }
+.tab-calendar .ca-row .vs { font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.tab-calendar .ca-hint { padding: 14px; gap: 10px; }
+.tab-calendar .ca-hint p { margin: 0; color: var(--text-2); }
+.tab-calendar .ca-hint-team { display: flex; align-items: flex-start; gap: 10px; }
+.tab-calendar .ca-hint-team .code { margin-top: 1px; }
+
+.tab-calendar .ca-why .btn { flex: none; }
+
+/* the sync pop-up (at window level) */
+.ca-sync .m-body > p:first-child { color: var(--text-2); }
+.ca-sync .ca-checking { display: flex; align-items: center; gap: 12px; margin: 10px 0 14px; color: var(--text-2); font-size: 13.5px; }
+.ca-sync .ca-error { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 6px 0 12px; }
+.ca-sync .ca-error .note { margin: 0; }
+.ca-sync .ca-compare { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 14px; }
+.ca-sync .ca-cmp { display: grid; grid-template-columns: 150px 110px minmax(0, 1fr); align-items: baseline; gap: 10px;
+  padding: 6px 10px; background: var(--tile); font-size: 13.5px; }
+.ca-sync .ca-cmp .caps { font-size: 13px; color: var(--text-2); }
+.ca-sync .ca-cmp b { color: var(--text); }
+.ca-sync .ca-cmp span:last-child { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ca-sync .ca-verdict { margin-top: 4px; }
+.ca-sync .ca-length .seg { align-self: flex-start; }
+.ca-sync .m-body .ca-others { margin: 12px 0 0; }
+.ca-sync .m-body .ca-apply { margin: 10px 0 0; font-size: 13.5px; }
+.ca-sync .ca-apply.go { color: var(--text); }
+
+/* the narrow window (940 wide): a slimmer side, smaller marks */
+@container (max-width: 860px) {
+  .tab-calendar .ca { grid-template-columns: minmax(0, 1fr) 228px; }
+  .tab-calendar .ca-day { padding: 4px 5px; }
+  .tab-calendar .ca-day .g { font-size: 15px; }
+  .tab-calendar .ca-day .g .at { font-size: 11.5px; }
+  .tab-calendar .ca-day .cnt { font-size: 11px; }
+  .tab-calendar .ca-day .cnt.big { font-size: 18px; }
+  .tab-calendar .card-head .ca-title { min-width: 118px; font-size: 15px; }
+  .tab-calendar .ca-row { grid-template-columns: 80px 22px minmax(0, 1fr); font-size: 13px; }
+  .tab-calendar .ca-tile { padding: 3px 7px 4px; }
+  .tab-calendar .ca-tile b { font-size: 19px; }
+  .tab-calendar .ca-daycard .long { display: none; }
+  .tab-calendar .ca-daycard .short { display: inline; }
+}
+@container (max-width: 700px) {
+  .tab-calendar .ca { grid-template-columns: minmax(0, 1fr) 208px; gap: 10px; }
+  .tab-calendar .ca-grid { padding: 6px 7px; gap: 2px; }
+  .tab-calendar .ca-day .cnt:not(.big) { display: none; }
+  .tab-calendar .ca-foot { gap: 5px 10px; padding: 5px 10px; }
+  .tab-calendar .ca-season .chip { display: none; }
+}
+
+/* 768-line screens */
+@media (max-height: 720px) {
+  .tab-calendar .ca-grid { padding: 6px 8px; gap: 2px; }
+  .tab-calendar .ca-day { padding: 3px 6px; }
+  .tab-calendar .ca-day .g { font-size: 16px; }
+  .tab-calendar .ca-foot { padding: 5px 10px; }
+  .tab-calendar .ca-side { gap: 8px; }
+  .tab-calendar .ca-tile b { font-size: 18px; }
+  .tab-calendar .ca-next { margin-top: 5px; }
+  .tab-calendar .ca-arrow { height: 22px; }
+  .tab-calendar .ca-row { height: 23px; }
+}

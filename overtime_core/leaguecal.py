@@ -1,0 +1,188 @@
+"""The real 2026-27 calendars of the other leagues NHL 19 schedules: the AHL and Liiga (docs/notes/calendar.md).
+
+The tables have the NHL ones' layout (calendar.py: round, day, month 0-based, index, home, away); a team index is the
+team's place in its league (exhibitionteams in `index` order).
+
+    ahl32schedule   the AHL of a Franchise with the 32-team expansion: AHL places 0-30 plus 31 (customteams 498, the
+                    expansion team's farm club, Seattle's Coachella Valley). Room 1,372: the real 1,152 games fit.
+    ahlschedule     the 31-team AHL (Season-era Franchise): Coachella Valley's games folded into games between its
+                    opponents (calendar.fold), 72 a team, room 1,331.
+    finnishschedule Liiga, league 3, 15 places (the 2018 clubs). The 2026-27 league has 17: Jokerit and K-Espoo have
+                    no place and their games are left out (56 a team, 420 games, room 480).
+
+A real AHL club takes the place of its NHL parent's farm team in the game (exhibitionteams.ahlaffiliate of the NHL
+club), so a parent's prospects play their real farm club's calendar whatever the game calls that team. Sources:
+the AHL's HockeyTech LeagueStat feed and liiga.fi's API, live; an offline copy ships with the app (`load_snapshot`,
+written by tools/build_leaguecal.py).
+"""
+import json
+import urllib.request
+
+from . import calendar
+from .calendar import CalendarError
+
+AHL32, AHL31, LIIGA = 'ahl32schedule', 'ahlschedule', 'finnishschedule'
+AHL_LEAGUE, LIIGA_LEAGUE = 1, 3
+AHL_EXPANSION = 31          # place of customteams 498 in ahl32schedule
+# HockeyTech club code -> NHL parent (calendar.SLOTS code), 2026-27 (theahl.com schedule release, 2026)
+AHL_PARENT = {'ABB': 'VAN', 'BAK': 'EDM', 'BEL': 'OTT', 'CGY': 'CGY', 'CLT': 'FLA', 'CHI': 'CAR', 'CLE': 'CBJ',
+              'CV': 'SEA', 'COL': 'COL', 'GR': 'DET', 'HAM': 'NYI', 'HFD': 'NYR', 'HSK': 'VGK', 'HER': 'WSH',
+              'IA': 'MIN', 'LAV': 'MTL', 'LV': 'PHI', 'MB': 'WPG', 'MIL': 'NSH', 'ONT': 'LAK', 'PRO': 'BOS',
+              'ROC': 'BUF', 'RFD': 'CHI', 'SD': 'ANA', 'SJ': 'SJS', 'SPR': 'STL', 'SYR': 'TBL', 'TEX': 'DAL',
+              'TOR': 'TOR', 'TUC': 'UTA', 'UTC': 'NJD', 'WBS': 'PIT'}
+# liiga.fi team name -> the game's Liiga place (league 3 in exhibitionteams order: Ässät 80 ... Sport 94)
+LIIGA_SLOTS = {'Ässät': 0, 'HPK': 1, 'HIFK': 2, 'Ilves': 3, 'Jukurit': 4, 'JYP': 5, 'KalPa': 6, 'Kärpät': 7,
+               'KooKoo': 8, 'Lukko': 9, 'Pelicans': 10, 'SaiPa': 11, 'Tappara': 12, 'TPS': 13, 'Sport': 14}
+LIIGA_NO_PLACE = ('Jokerit', 'K-Espoo')
+AHL_SEASONS = {2026: 94}    # HockeyTech season_id of each regular season (view=seasons)
+AHL_KEY = '50c2cd9b5e18e390'    # theahl.com's public feed key
+AHL_URL = ('https://lscluster.hockeytech.com/feed/index.php?feed=modulekit&view=schedule&key={key}&fmt=json'
+           '&client_code=ahl&lang=en&season_id={sid}&team_id=&month=-1&location=home')
+LIIGA_URL = 'https://liiga.fi/api/v2/games?tournament=runkosarja&season={season}'
+AHL_CREDIT = 'Official statistics provided by American Hockey League'
+USER_AGENT = 'OvertimeRoster (+https://ot.puckpeak.com)'
+
+
+def _http_get(url, timeout=30):
+    req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT, 'Accept': 'application/json'})
+    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 (fixed https bases)
+        return r.read()
+
+
+def ahl_games(body):
+    """[(date, home code, away code)] of a HockeyTech schedule feed (modulekit, view=schedule), date order."""
+    rows = (body.get('SiteKit') or {}).get('Schedule') or []
+    games = [(g['date_played'], g['home_team_code'], g['visiting_team_code'], int(g['game_id'])) for g in rows]
+    return [g[:3] for g in sorted(games, key=lambda g: (g[0], g[3]))]
+
+
+def liiga_games(body):
+    """[(date, home name, away name)] of liiga.fi's games list (local date of the face-off), date order."""
+    games = []
+    for g in body or []:
+        when = (g['homeTeam'].get('gameStartDateTime') or g['start'])[:10]
+        games.append((when, g['homeTeam']['teamName'], g['awayTeam']['teamName'], g['id']))
+    return [g[:3] for g in sorted(games, key=lambda g: (g[0], g[3]))]
+
+
+def fetch_season(start_year, fetch=_http_get, log=lambda msg: None):
+    """{'ahl': games, 'liiga': games} of the season starting in `start_year`, live; a league that can't be read is
+    left out (logged)."""
+    out = {}
+    if start_year in AHL_SEASONS:
+        try:
+            out['ahl'] = ahl_games(json.loads(fetch(AHL_URL.format(key=AHL_KEY, sid=AHL_SEASONS[start_year]))))
+            log(f"AHL {start_year}-{(start_year + 1) % 100:02d}: {len(out['ahl'])} games (HockeyTech)")
+        except (OSError, ValueError, KeyError, TypeError) as err:
+            log(f'AHL calendar: {err}')
+    try:
+        out['liiga'] = liiga_games(json.loads(fetch(LIIGA_URL.format(season=start_year + 1))))
+        log(f"Liiga {start_year}-{(start_year + 1) % 100:02d}: {len(out['liiga'])} games (liiga.fi)")
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        log(f'Liiga calendar: {err}')
+    return {k: v for k, v in out.items() if v}
+
+
+def load_snapshot(path, start_year):
+    """The offline copy {'ahl': games, 'liiga': games} for `start_year`; {} without one."""
+    try:
+        with open(path, encoding='utf-8') as f:
+            snap = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if snap.get('season') != start_year:
+        return {}
+    return {k: [tuple(g[:3]) for g in snap.get(k) or []] for k in ('ahl', 'liiga') if snap.get(k)}
+
+
+def snapshot(start_year, leagues, generated):
+    """The offline copy's content (load_snapshot reads it)."""
+    return dict({'format': 1, 'season': start_year, 'generated': generated, 'credit': AHL_CREDIT},
+                **{k: [list(g) for g in v] for k, v in sorted(leagues.items())})
+
+
+def _league(db, league):
+    t = db['exhibitionteams']
+    return sorted((t.row(i) for i in range(t.count) if t.get(i, 'league') == league), key=lambda r: r['index'])
+
+
+def ahl_slots(db):
+    """{NHL code: AHL place} from the roster's own farm links (exhibitionteams.ahlaffiliate of NHL clubs 0-30);
+    'SEA' -> AHL_EXPANSION."""
+    if 'exhibitionteams' not in db:
+        raise CalendarError('this roster has no team table (exhibitionteams)')
+    places = {r['index']: i for i, r in enumerate(_league(db, AHL_LEAGUE))}
+    t = db['exhibitionteams']
+    farm = {t.get(i, 'index'): t.get(i, 'ahlaffiliate') for i in range(t.count)}
+    out = {}
+    for code, slot in calendar.SLOTS.items():
+        if slot == calendar.EXPANSION:
+            continue
+        if farm.get(slot) not in places:
+            raise CalendarError(f'{code} has no AHL farm team in this roster')
+        out[code] = places[farm[slot]]
+    if len(set(out.values())) != len(out) or len(places) != len(out):
+        raise CalendarError('the NHL clubs and the AHL teams do not pair up one to one in this roster')
+    out['SEA'] = AHL_EXPANSION
+    return out
+
+
+def _even(played, fold_team=None):
+    """`played` [(date, home, away)] (place numbers) with `fold_team`'s games folded away, every team on the same
+    number of games (the fewest any team has, made even; calendar.trim), date order."""
+    if fold_team is not None:
+        played = calendar.fold(played, team=fold_team)
+    counts = calendar.per_team(played)
+    if len(set(counts.values())) > 1:
+        per = min(counts.values()) // 2 * 2
+        played = calendar.trim(played, per)
+    return sorted(played, key=lambda g: g[0])
+
+
+def ahl_rows(games, slots, teams=32):
+    """The AHL `games` (ahl_games) as rows of the `teams`-team table (32: all; 31: Coachella Valley folded)."""
+    unknown = sorted({c for _d, h, a in games for c in (h, a) if c not in AHL_PARENT})
+    if unknown:
+        raise CalendarError(f"no NHL parent known for AHL club(s) {', '.join(unknown)}")
+    played = [(d, slots[AHL_PARENT[h]], slots[AHL_PARENT[a]]) for d, h, a in games]
+    if teams == 31:
+        return _even(played, AHL_EXPANSION)
+    if teams != 32:
+        raise CalendarError(f'no {teams}-team AHL calendar')
+    return _even(played)
+
+
+def liiga_rows(games):
+    """Liiga `games` (liiga_games) as finnishschedule rows: clubs without a place left out."""
+    unknown = sorted({c for _d, h, a in games for c in (h, a) if c not in LIIGA_SLOTS and c not in LIIGA_NO_PLACE})
+    if unknown:
+        raise CalendarError(f"no Liiga place for {', '.join(unknown)}")
+    return _even([(d, LIIGA_SLOTS[h], LIIGA_SLOTS[a]) for d, h, a in games if h in LIIGA_SLOTS and a in LIIGA_SLOTS])
+
+
+def apply(db, schema, leagues):
+    """Write `leagues` ({'ahl': games, 'liiga': games}, either may be missing) into their tables. Everything is made
+    and checked for room before anything is written. Returns {table: {'games', 'per_team', 'first', 'last',
+    'teams'}} (calendar.check reads it)."""
+    plan = {}
+    if leagues.get('ahl'):
+        slots = ahl_slots(db)
+        plan[AHL32] = (ahl_rows(leagues['ahl'], slots, 32), 32)
+        plan[AHL31] = (ahl_rows(leagues['ahl'], slots, 31), 31)
+    if leagues.get('liiga'):
+        if len(_league(db, LIIGA_LEAGUE)) != len(LIIGA_SLOTS):
+            raise CalendarError(f'this roster\'s Liiga does not have {len(LIIGA_SLOTS)} teams')
+        plan[LIIGA] = (liiga_rows(leagues['liiga']), len(LIIGA_SLOTS))
+    for name, (rows, _n) in plan.items():
+        if name not in db:
+            raise CalendarError(f'this roster has no {name}')
+        t = db[name]
+        if len(rows) > t.max_records:
+            raise CalendarError(f'{len(rows)} games do not fit in {name} ({t.max_records})')
+    out = {}
+    for name, (rows, n) in plan.items():
+        calendar.fill(db[name], rows)
+        counts = calendar.per_team(rows)
+        out[name] = {'games': len(rows), 'per_team': (min(counts.values()), max(counts.values())),
+                     'first': rows[0][0], 'last': rows[-1][0], 'teams': n}
+    return out

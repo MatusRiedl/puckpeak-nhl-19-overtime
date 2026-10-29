@@ -1,0 +1,159 @@
+/* Multiplayer tab. Rules sit under .tab-multiplayer and use the prefix .mp- (docs/ui/CONTRACT.md); tokens from tokens.css,
+   parts from app.css. Left: You (name, ShadNet id, checks). Right: the lobby (list / waiting / launching) and the game steps. */
+
+.tab-multiplayer .mp { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 10px; align-items: start; align-content: start; overflow: hidden auto; }
+.tab-multiplayer .mp-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.tab-multiplayer .mp-body { padding: 10px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.tab-multiplayer .mp-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tab-multiplayer .mp-row .sp { flex: 1; }
+.tab-multiplayer .mp-note { font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+.tab-multiplayer .mp-note.warn { color: var(--caution); }
+.tab-multiplayer .mp-note.bad { color: #ff6b8f; }
+.tab-multiplayer .mp-privacy summary { cursor: pointer; font-size: 11.5px; color: var(--text-2); }
+.tab-multiplayer .mp-privacy ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* --- You: label / value rows with their check chip ------------------------------------------------------------------ */
+.tab-multiplayer .mp-fact { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 4px 10px 4px 14px; background: var(--tile);
+  box-shadow: inset 3px 0 0 var(--text-off); }
+.tab-multiplayer .mp-fact.good { box-shadow: inset 3px 0 0 var(--good); }
+.tab-multiplayer .mp-fact.caution { box-shadow: inset 3px 0 0 var(--caution); }
+.tab-multiplayer .mp-fact.bad { box-shadow: inset 3px 0 0 var(--bad); }
+.tab-multiplayer .mp-fact-label { flex: none; width: 92px; font-size: 12px; color: var(--text-3); letter-spacing: .08em; }
+.tab-multiplayer .mp-fact-value { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-multiplayer .mp-fact-sub { font-size: 12px; font-weight: 400; color: var(--text-2); margin-left: 6px; }
+
+/* --- Lobby: create / join, the public list, the code ----------------------------------------------------------------- */
+.tab-multiplayer .mp-join { display: flex; gap: 8px; }
+.tab-multiplayer .mp-code-in { width: 110px; flex: none; text-transform: uppercase; letter-spacing: .25em; text-align: center; font-weight: 700; }
+.tab-multiplayer .mp-list { display: flex; flex-direction: column; gap: 4px; max-height: 190px; overflow-y: auto; }
+.tab-multiplayer .mp-lobby-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 14px; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off); }
+.tab-multiplayer .mp-lobby-row:hover { background: var(--tile-hi); box-shadow: inset 3px 0 0 var(--accent); }
+.tab-multiplayer .mp-lobby-row .who { flex: 1; min-width: 0; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-multiplayer .mp-lobby-row .age { font-size: 12px; color: var(--text-3); }
+.tab-multiplayer .mp-empty { padding: 14px; font-size: 13px; color: var(--text-3); text-align: center; background: var(--panel-deep); }
+.tab-multiplayer .mp-code { display: flex; align-items: center; gap: 12px; }
+.tab-multiplayer .mp-code-big { font: 700 34px/1 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style); letter-spacing: .22em; color: var(--text); }
+
+/* --- players: two cards with their marks ----------------------------------------------------------------------------- */
+.tab-multiplayer .mp-players { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tab-multiplayer .mp-player { padding: 10px 12px 10px 16px; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tab-multiplayer .mp-player.ready { box-shadow: inset 3px 0 0 var(--good); }
+.tab-multiplayer .mp-player.empty { background: var(--panel-deep); color: var(--text-3); align-items: center; justify-content: center; min-height: 82px; box-shadow: none; }
+.tab-multiplayer .mp-player-name { font-size: 17px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-multiplayer .mp-player-name .you { margin-left: 6px; font-size: 11px; color: var(--accent); letter-spacing: .1em; }
+.tab-multiplayer .mp-marks { display: flex; flex-wrap: wrap; gap: 5px; }
+
+/* --- Match rules: label over a choice, two to a row; a changed rule is marked ---------------------------------------- */
+.tab-multiplayer .mp-rules { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.tab-multiplayer .mp-rule { display: flex; flex-direction: column; gap: 4px; padding: 7px 10px 8px 14px; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off); min-width: 0; }
+.tab-multiplayer .mp-rule.changed { box-shadow: inset 3px 0 0 var(--accent); }
+.tab-multiplayer .mp-rule-label { font-size: 11.5px; color: var(--text-3); letter-spacing: .08em; }
+.tab-multiplayer .mp-rule-value { font-size: 15px; font-weight: 700; color: var(--text); min-height: 30px; display: flex; align-items: center; }
+.tab-multiplayer .mp-rule .field { width: 100%; }
+
+/* --- Game: the steps the app does and the one the player does ------------------------------------------------------- */
+.tab-multiplayer .mp-steps { display: flex; flex-direction: column; gap: 4px; }
+.tab-multiplayer .mp-step { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 3px 10px 3px 14px; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off); color: var(--text-3); font-size: 14px; }
+.tab-multiplayer .mp-step.now { color: var(--text); box-shadow: inset 3px 0 0 var(--accent); background: var(--tile-hi); }
+.tab-multiplayer .mp-step.done { color: var(--text-2); box-shadow: inset 3px 0 0 var(--good); }
+.tab-multiplayer .mp-step.fail { color: #ff6b8f; box-shadow: inset 3px 0 0 var(--bad); }
+.tab-multiplayer .mp-step .sp { flex: 1; }
+.tab-multiplayer .mp-step .n { flex: none; width: 18px; font-weight: 700; text-align: center; }
+.tab-multiplayer .mp-manual { padding: 8px 12px 8px 14px; background: var(--panel-deep); box-shadow: inset 3px 0 0 var(--caution); font-size: 13px; line-height: 1.45; color: var(--text-soft); }
+@media (max-width: 860px) { .tab-multiplayer .mp { grid-template-columns: minmax(0, 1fr); } }
+
+/* --- History: matches, the players table, the pop-ups ---------------------------------------------------------------- */
+.tab-multiplayer .mp-matches { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; }
+.tab-multiplayer .mp-match { padding: 8px 10px 8px 14px; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tab-multiplayer .mp-match.confirmed { box-shadow: inset 3px 0 0 var(--good); }
+.tab-multiplayer .mp-match.waiting { box-shadow: inset 3px 0 0 var(--caution); }
+.tab-multiplayer .mp-match.disputed { box-shadow: inset 3px 0 0 var(--bad); }
+.tab-multiplayer .mp-match-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tab-multiplayer .mp-match-main .mp-side:last-child { justify-content: flex-end; text-align: right; }
+.tab-multiplayer .mp-side { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; color: var(--text-2); }
+.tab-multiplayer .mp-side.won { color: var(--text); font-weight: 700; }
+.tab-multiplayer .mp-side-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-multiplayer .mp-team { flex: none; font-size: 11.5px; font-weight: 700; letter-spacing: .08em; color: var(--accent); }
+.tab-multiplayer .mp-score { flex: none; min-width: 52px; text-align: center; font: 700 20px/1 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style); color: var(--text); }
+.tab-multiplayer .mp-score.tentative { color: var(--text-3); }
+.tab-multiplayer .mp-match-sub { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tab-multiplayer .mp-match-sub .sp { flex: 1; }
+.tab-multiplayer .mp-ago { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.tab-multiplayer .mp-players-table { display: flex; flex-direction: column; gap: 3px; max-height: 340px; overflow-y: auto; }
+.tab-multiplayer .mp-prow { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 10px 7px 14px; border: 0; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off);
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.tab-multiplayer .mp-prow:hover { background: var(--tile-hi); box-shadow: inset 3px 0 0 var(--accent); }
+.tab-multiplayer .mp-prow.you { box-shadow: inset 3px 0 0 var(--accent); }
+.tab-multiplayer .mp-prow.head { background: none; box-shadow: none; cursor: default; font-size: 11.5px; color: var(--text-3); padding-top: 2px; padding-bottom: 2px; }
+.tab-multiplayer .mp-prow-name { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-multiplayer .mp-prow-name .you { margin-left: 6px; font-size: 11px; color: var(--accent); letter-spacing: .1em; }
+.tab-multiplayer .mp-prow-n { flex: none; width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+.tab-multiplayer .mp-prow-n.plus { color: var(--good); }
+.tab-multiplayer .mp-prow-n.minus { color: #ff6b8f; }
+
+/* the pop-ups are drawn by the shell, outside .tab-multiplayer, so they carry their own prefix rules */
+.mp-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.mp-tally { display: flex; align-items: baseline; gap: 12px; }
+.mp-tally-n { font: 700 34px/1 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style); color: var(--text); }
+.mp-detail-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.mp-sub { font-size: 11.5px; color: var(--text-3); letter-spacing: .08em; margin-bottom: 4px; }
+.mp-rec { display: flex; flex-direction: column; gap: 3px; }
+.mp-rec-row { display: flex; gap: 8px; padding: 5px 10px 5px 12px; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off); }
+.mp-rec-name { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-rec-wl { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.mp-recent { display: flex; flex-direction: column; gap: 3px; max-height: 190px; overflow-y: auto; }
+.mp-recent-row { display: flex; align-items: center; gap: 10px; padding: 5px 10px 5px 12px; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off); }
+.mp-recent-row.W { box-shadow: inset 3px 0 0 var(--good); }
+.mp-recent-row.L { box-shadow: inset 3px 0 0 var(--bad); }
+.mp-res { flex: none; width: 16px; font-weight: 700; text-align: center; }
+.mp-recent-main { flex: 1; min-width: 0; font-weight: 600; }
+.mp-detail .mp-empty, .mp-form .mp-empty { padding: 8px; font-size: 13px; color: var(--text-3); background: var(--panel-deep); }
+.mp-detail .mp-note, .mp-form .mp-note { font-size: 12.5px; color: var(--text-2); }
+.mp-detail .mp-note.bad, .mp-form .mp-note.bad { color: #ff6b8f; }
+.mp-detail .mp-ago { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.mp-form { display: flex; flex-direction: column; gap: 14px; min-width: 300px; }
+.mp-form-row { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-3); }
+.mp-score-in { display: flex; align-items: center; gap: 10px; font-size: 20px; color: var(--text); }
+.mp-score-in .field.mp-num { flex: none; width: 64px; text-align: center; font-size: 20px; font-weight: 700; }
+
+/* rating strip, review-ready banner, review pop-up, rating columns (docs/plans/m5-rating-board.md) */
+.tab-multiplayer .mp-rating { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 14px; background: var(--panel-deep); box-shadow: inset 3px 0 0 var(--accent); }
+.tab-multiplayer .mp-rating-main { display: flex; align-items: center; gap: 12px; }
+.tab-multiplayer .mp-rating-n { font: 700 34px/1 var(--font-head); font-stretch: var(--head-stretch); font-style: var(--head-style); color: var(--text); }
+.tab-multiplayer .mp-rating-tier { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.tab-multiplayer .mp-rating-sub { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 140px; }
+.tab-multiplayer .mp-delta { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tab-multiplayer .mp-delta.plus, .mp-review .plus { color: var(--good); }
+.tab-multiplayer .mp-delta.minus, .mp-review .minus { color: #ff6b8f; }
+.tab-multiplayer .mp-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; background: var(--tile); box-shadow: inset 3px 0 0 var(--caution); font-size: 13px; }
+.tab-multiplayer .mp-prow-n.mp-rk { width: 44px; color: var(--text-2); }
+.tab-multiplayer .mp-prow-n.mp-rt { width: 52px; font-weight: 700; }
+.mp-review { display: flex; flex-direction: column; gap: 10px; }
+.mp-review .mp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.mp-review .mp-facts { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; line-height: 1.4; }
+.mp-review .mp-empty { padding: 8px; font-size: 13px; color: var(--text-3); background: var(--panel-deep); }
+.mp-review .mp-note { font-size: 12.5px; color: var(--text-2); }
+.tab-multiplayer .mp-prow-tier { flex: none; width: 128px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-multiplayer .mp-progress { flex: 1 1 140px; height: 6px; background: var(--tile); min-width: 120px; }
+.tab-multiplayer .mp-progress > span { display: block; height: 100%; background: var(--accent); transition: width .6s ease; }
+.tab-multiplayer .mp-progress-n { white-space: nowrap; }
+.tab-multiplayer .mp-ladder { display: flex; flex-direction: column; gap: 3px; }
+.tab-multiplayer .mp-ladder-row { display: flex; align-items: baseline; gap: 12px; padding: 5px 10px 5px 14px; background: var(--tile); box-shadow: inset 3px 0 0 var(--text-off); }
+.tab-multiplayer .mp-ladder-row.you { box-shadow: inset 3px 0 0 var(--accent); background: var(--tile-hi); }
+.tab-multiplayer .mp-ladder-row b { flex: none; width: 140px; }
+.tab-multiplayer .mp-ladder-row .mp-note { flex: none; width: 72px; }
+.tab-multiplayer .mp-ladder-row .mp-ladder-b { flex: 1; width: auto; }
+
+/* --- Lobby chat: log, box, quick phrases ------------------------------------------------------------------------------ */
+.tab-multiplayer .mp-chat { display: flex; flex-direction: column; gap: 6px; }
+.tab-multiplayer .mp-chat-log { display: flex; flex-direction: column; gap: 3px; max-height: 150px; overflow-y: auto; padding: 8px 12px; background: var(--panel-deep); min-height: 44px; }
+.tab-multiplayer .mp-chat-line { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+.tab-multiplayer .mp-chat-line b { color: var(--accent); margin-right: 8px; }
+.tab-multiplayer .mp-chat-line.mine b { color: var(--text-3); }
+.tab-multiplayer .mp-chat-empty { font-size: 12.5px; color: var(--text-3); }
+.tab-multiplayer .mp-chat-in { display: flex; gap: 8px; }
+.tab-multiplayer .mp-chat-in .field { flex: 1; min-width: 0; }
+.tab-multiplayer .mp-chat-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.tab-multiplayer .mp-chat-chip { font: inherit; font-size: 12px; padding: 4px 10px; color: var(--text-2); background: var(--tile); border: 0; cursor: pointer; box-shadow: inset 2px 0 0 var(--text-off); }
+.tab-multiplayer .mp-chat-chip:hover { background: var(--tile-hi); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+

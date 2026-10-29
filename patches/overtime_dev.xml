@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overtime dev patches for NHL 19 (CUSA11126, v1.60), applied in memory by shadPS4: pass this file to tools/run_game.py (patch option).
+  Addresses are eboot vaddr + 0x400000 (shadPS4 subtracts 0x400000 for non-offset lines). See docs/notes/shadps4-network.md.
+-->
+<Patch>
+  <!-- ProtoHttp polls sceHttpGetStatusCode while a non-blocking request is in flight and only treats 0x80431065 as
+       "not ready"; shadPS4 answers 0x80431082 (EAGAIN), so every request was dropped. cmp eax, imm32 at 0x3890812. -->
+  <Metadata Name="ProtoHttp: accept EAGAIN while waiting for the status code" AppVer="01.60" AppElf="eboot.bin" isEnabled="true">
+    <PatchList>
+      <Line Type="bytes" Address="0x3C90813" Value="82104380"/>
+    </PatchList>
+  </Metadata>
+  <!-- Redirector host "spring18.gosredirector.ea.com" (0x4ddccff) -> "localhost", so no hosts-file entry is needed. -->
+  <Metadata Name="Redirector host: localhost" AppVer="01.60" AppElf="eboot.bin" isEnabled="true">
+    <PatchList>
+      <Line Type="bytes" Address="0x51DCCFF" Value="6C6F63616C686F737400"/>
+    </PatchList>
+  </Metadata>
+  <!-- QosClient copies its 'ncrt' flag (state+0xe467) into the ProtoSSL ref before the coordinator request
+       (mov cl, [rbx+0xe467] at 0x385aa16). mov cl, 1 disables cert validation for the QoS coordinator link only. -->
+  <Metadata Name="QoS coordinator: skip TLS cert validation" AppVer="01.60" AppElf="eboot.bin" isEnabled="true">
+    <PatchList>
+      <Line Type="bytes" Address="0x3C5AA16" Value="B10190909090"/>
+    </PatchList>
+  </Metadata>
+  <!-- Nucleus prod base URLs (flat 0x4e6e089 accounts, 0x4e6e0a2 gateway, 0x4e6e0ba signin) -> https://localhost/
+       (the stub serves HTTPS on 443). The login state machine calls {accounts}connect/auth, connect/token, ... -->
+  <Metadata Name="Nucleus hosts: localhost" AppVer="01.60" AppElf="eboot.bin" isEnabled="true">
+    <PatchList>
+      <Line Type="bytes" Address="0x526E089" Value="68747470733A2F2F6C6F63616C686F73742F00"/>
+      <Line Type="bytes" Address="0x526E0A2" Value="68747470733A2F2F6C6F63616C686F73742F00"/>
+      <Line Type="bytes" Address="0x526E0BA" Value="68747470733A2F2F6C6F63616C686F73742F00"/>
+    </PatchList>
+  </Metadata>
+  <!-- 0x423ad80 appends a 0x38 entry to a team's fixed list (32 slots of 366 inline entries, header begin/end/cap)
+       with no capacity check; a full list's next entry zeroes the next team's begin/end and that team's next append
+       writes to 0 (0xc0000005 at 0x423ce8c after "Too few players"). Hook 0x423ce71 -> cave 0x56eb000 (text padding):
+       end >= cap skips the entry (jmp to the per-player cleanup 0x423b41b), else the original 3 instructions.
+       The same ledger's four other appends (not-found blocks at 0x42094b1, 0x421146f, 0x422c2af, 0x422487f) get caves
+       0x56eb040, 0x56eb070, 0x56eb0a0, 0x56eb0d0: end >= cap takes the last entry (its function's own found path,
+       0x42094ed, 0x42114b3, 0x422c2f2, 0x42248c3) in place of a new one, else the original block. -->
+  <Metadata Name="R1: cap check on the Franchise per-team list append" AppVer="01.60" AppElf="eboot.bin" isEnabled="true">
+    <PatchList>
+      <Line Type="bytes" Address="0x463CE71" Value="E98AE14A0190909090909090"/>
+      <Line Type="bytes" Address="0x5AEB000" Value="488B7C02104839FE7311488D440208488D7E38488938E9621EB5FEE9FB03B5FE"/>
+      <Line Type="bytes" Address="0x46094B1" Value="E98A1B4E0190909090909090"/>
+      <Line Type="bytes" Address="0x5AEB040" Value="488B5408104839D37311488D440808488D5338488910E962E4B1FE488D5BC8E989E4B1FE"/>
+      <Line Type="bytes" Address="0x461146F" Value="E9FC9B4D0190909090909090"/>
+      <Line Type="bytes" Address="0x5AEB070" Value="488B5408104839D77311488D440808488D5738488910E9F063B2FE488D7FC8E91F64B2FE"/>
+      <Line Type="bytes" Address="0x462C2AF" Value="E9ECED4B019090909090909090909090"/>
+      <Line Type="bytes" Address="0x5AEB0A0" Value="488B5408104839D67315488D440808488D5638C5F857C0488910E90012B4FE488D76C8E92A12B4FE"/>
+      <Line Type="bytes" Address="0x462487F" Value="E94C684C019090909090909090"/>
+      <Line Type="bytes" Address="0x5AEB0D0" Value="488B5408104939D47312488D440808498D542438488910E9A097B3FE4D8D6424C8E9CD97B3FE"/>
+    </PatchList>
+  </Metadata>
+  <!-- Be a Pro's Choose Team job (0x14827b0) sends Context "Exhibition"; its lea at 0x1482899 points at the job's
+       own name ("nhl-job:bap-creation:...") as a marker. by-league-id (0x13c4910): the Context test at 0x13c4e13 sets
+       bit 7 of [rbp-0x2c9] for a marked request, and the Exhibition limit block at 0x13c53af keeps team 399 for it.
+       Builder 0x1008640 (competition:info:add): 0x100a920 -> cave 0x56eb100, so Be a Pro ([rbp-0x800]) also copies the
+       mode-creation team list (loop 0x100ab60; exits 0x100ab78 / 0x100ac27 -> caves 0x56eb160 / 0x56eb180 back to the
+       Be a Pro block 0x100a926). 0x1009b0d -> cave 0x56eb1a0: in Be a Pro with the 32-team switch live
+       ([[0x5f4a790]+0x29]) the config is made for 32 teams (esi, [cfg+0x294] NHL, [cfg+0x3ec] AHL with 498). -->
+  <Metadata Name="BAP32: Seattle in Be a Pro" AppVer="01.60" AppElf="eboot.bin" isEnabled="true">
+    <PatchList>
+      <Line Type="bytes" Address="0x1882899" Value="488D155A738B03"/>
+      <Line Type="bytes" Address="0x17C4E13" Value="4C8BBD20FDFFFF81384C656167750981780367756500744880BD37FDFFFF000F84960100006A1F5A488B0D5606F304E313837930007E0D488B5140488B12488B128B521881386E686C2D750380CA80889537FDFFFFE961010000909090909090"/>
+      <Line Type="bytes" Address="0x17C53AF" Value="8BB35401000085C075330FB68D37FDFFFFE32A0FBAF107730F81FE8F0100007507BE8F010000EB1539CE7D20EB0F909090909090909090909090909090"/>
+      <Line Type="bytes" Address="0x140A920" Value="E9DB076E0490"/>
+      <Line Type="bytes" Address="0x140AB78" Value="E9E3056E0490"/>
+      <Line Type="bytes" Address="0x140AC27" Value="E954056E04"/>
+      <Line Type="bytes" Address="0x5AEB100" Value="0F8449FA91FB498B8424C0000000492B8424B8000000483D000300000F8504F891FBE939FA91FB488BBD10F8FFFFC7879402000020000000C7875C140000000000008B8F3C0E0000448B87400E0000BE2000000031D2E8E5C295FEE900FA91FB"/>
+      <Line Type="bytes" Address="0x5AEB160" Value="0F8518FA91FB80BD00F8FFFF000F85B3F791FBE9150392FB"/>
+      <Line Type="bytes" Address="0x5AEB180" Value="80BD00F8FFFF000F8599F791FBE9020392FB"/>
+      <Line Type="bytes" Address="0x1409B0D" Value="E88E166E049090"/>
+      <Line Type="bytes" Address="0x5AEB1A0" Value="31F680BD00F8FFFF00742F488B05DEF585004885C0742380782900741DBE2000000041C78424940200002000000041C78424EC0300002000000031D24C89E7C3"/>
+    </PatchList>
+  </Metadata>
+  <!-- Tweak gFEGameModesBeAGM_Enable32TeamExpansion (bool, object 0x5f4a750): its static initialiser stores the
+       default 0 (mov byte [rip+0x5c52e1e], 0 at 0x2f7963 -> +0x38); the registry takes it as the live value that the
+       TeamList builder (0x1d5e8a0, appends team 499) and the team-count getters read. Default 1 = 32 teams. -->
+  <Metadata Name="E32: 32 teams in every mode" AppVer="01.60" AppElf="eboot.bin" isEnabled="true">
+    <PatchList>
+      <Line Type="bytes" Address="0x6F7963" Value="C6051E2EC50501"/>
+    </PatchList>
+  </Metadata>
+</Patch>

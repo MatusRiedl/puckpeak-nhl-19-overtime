@@ -1,0 +1,119 @@
+/* Jerseys & gear tab (Builder D). Rules sit under .tab-jerseys and use the prefix .jg- (docs/ui/CONTRACT.md); tokens from
+   tokens.css, parts from app.css. Layout from Legacy's Jerseys & ice (tiles with the picture at the left), look from
+   NHL 19: flat tiles, slanted colour swatches, the red bar on what is picked. */
+.tab-jerseys .jg-tab { flex: 1; min-width: 0; }
+
+.tab-jerseys .jg-body { display: flex; flex-direction: column; gap: 8px; }
+.tab-jerseys .jg-note { margin: 0; flex: none; }
+.tab-jerseys .jg-note.good { color: var(--good); }
+
+/* the gear colours at the left, the three others stacked at the right; both fill the card and scroll on their own
+   (the gear colours when a team has many, the right side on short windows) */
+.tab-jerseys .jg-grid { flex: 1 1 0; min-height: 260px; display: flex; gap: 10px; }
+.tab-jerseys .jg-left { flex: 1.25 1 0; min-width: 0; display: flex; flex-direction: column; }
+.tab-jerseys .jg-left > .jg-gear { flex: 1; min-height: 0; }
+.tab-jerseys .jg-right { flex: 1 1 0; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.tab-jerseys .jg-right > .jg-tile { flex: none; }
+.tab-jerseys .jg-gear .jg-main { min-height: 0; }
+.tab-jerseys .jg-tile { display: flex; gap: 12px; padding: 10px; background: var(--panel-deep); box-shadow: inset 0 0 0 1px var(--line);
+  min-width: 0; }
+.tab-jerseys .jg-pic { flex: none; width: 92px; height: 92px; display: grid; place-items: center; background: var(--tile); }
+.tab-jerseys .jg-art { width: 76px; height: 62px; overflow: visible; }
+.tab-jerseys .jg-edge { stroke: rgba(255, 255, 255, .28); stroke-width: 1.2; }
+.tab-jerseys .jg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.tab-jerseys .jg-tile-head { display: flex; align-items: baseline; gap: 10px; min-height: 22px; }
+.tab-jerseys .jg-tile-title { white-space: nowrap; }
+.tab-jerseys .jg-aside { min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-jerseys .jg-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.tab-jerseys .jg-actions .small-note { flex: 1 1 200px; min-width: 0; margin: 0; }
+.tab-jerseys .jg-arrow { flex: none; width: 12px; height: 10px; color: var(--text-3); }
+
+/* a gear colour: now, new (the colour box), where it is, the team colours, Back; the hex codes show on hover */
+.tab-jerseys .jg-palette { flex: 0 1 auto; min-height: 0; overflow-y: auto;
+  scrollbar-gutter: stable; display: flex; flex-direction: column; gap: 2px; }
+.tab-jerseys .jg-prow { display: grid; grid-template-columns: 24px 12px 24px minmax(0, 1fr) 76px 52px; align-items: center;
+  gap: 8px; min-height: 28px; padding: 1px 8px; background: var(--tile); flex: none; }
+.tab-jerseys .jg-prow:not(.jg-phead):hover { background: var(--tile-hi); box-shadow: inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tab-jerseys .jg-prow.changed { box-shadow: inset 3px 0 0 var(--caution); }
+.tab-jerseys .jg-prow.changed:hover { box-shadow: inset 3px 0 0 var(--caution), inset 0 calc(-1 * var(--focus-bar)) 0 var(--accent); }
+.tab-jerseys .jg-phead { min-height: 18px; background: none; margin-right: 8px; }
+.tab-jerseys .jg-phead .th { font-size: 12.5px; }
+.tab-jerseys .jg-sw { position: relative; display: block; width: 24px; height: 18px; transform: skewX(var(--slant));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); }
+.tab-jerseys .jg-pick { cursor: pointer; }
+.tab-jerseys .jg-pick:hover { box-shadow: inset 0 0 0 1px #fff, 0 0 8px var(--glow); }
+.tab-jerseys .jg-pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.tab-jerseys .jg-where { min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-jerseys .jg-quick { display: flex; gap: 5px; }
+.tab-jerseys .jg-qsw { width: 16px; height: 16px; padding: 0; border: 0; cursor: pointer; transform: skewX(var(--slant));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); }
+.tab-jerseys .jg-qsw:hover, .tab-jerseys .jg-qsw:focus-visible { outline: none; box-shadow: inset 0 0 0 1px #fff, 0 0 8px var(--glow); }
+.tab-jerseys .jg-qsw.on { box-shadow: inset 0 0 0 2px #fff; }
+.tab-jerseys .jg-back { padding-left: 8px; padding-right: 8px; }
+
+/* each piece as a bar of its colours */
+.tab-jerseys .jg-pieces { flex: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 18px; padding-top: 4px; }
+.tab-jerseys .jg-piece { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: center; gap: 8px; }
+.tab-jerseys .jg-pname { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.tab-jerseys .jg-bar { display: flex; height: 10px; gap: 1px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--line); }
+.tab-jerseys .jg-bar i { min-width: 2px; }
+
+/* team colours */
+.tab-jerseys .jg-crows { display: flex; flex-direction: column; gap: 4px; }
+.tab-jerseys .jg-crow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.tab-jerseys .jg-clabel { width: 92px; flex: none; font-size: 13px; color: var(--text-2); }
+.tab-jerseys .jg-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-soft);
+  font-variant-numeric: tabular-nums; }
+.tab-jerseys .jg-chip i { width: 20px; height: 14px; transform: skewX(var(--slant)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); }
+
+/* copy another team's gear */
+.tab-jerseys .jg-select { flex: 0 1 300px; height: 32px; }
+.tab-jerseys .jg-cnote, .tab-jerseys .jg-error { flex: 1 1 200px; min-width: 0; margin: 0; }
+
+/* sticks */
+.tab-jerseys .jg-sticks { flex: none; gap: 2px; max-height: 120px; }
+.tab-jerseys .jg-actions .jg-snote { flex-basis: 140px; }
+.tab-jerseys .jg-stick { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr) 12px minmax(0, 1.2fr); align-items: center;
+  gap: 8px; min-height: 28px; padding: 2px 8px; background: var(--tile); font-size: 12.5px; }
+.tab-jerseys .jg-stick b { font-weight: 600; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-jerseys .jg-old, .tab-jerseys .jg-new { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-jerseys .jg-old { color: var(--text-3); }
+.tab-jerseys .jg-new { color: var(--text-2); }
+.tab-jerseys .jg-stick.fitted { box-shadow: inset 3px 0 0 var(--caution); }
+.tab-jerseys .jg-stick.fitted .jg-old { text-decoration: line-through; }
+.tab-jerseys .jg-stick.fitted .jg-new { color: var(--text-soft); }
+.tab-jerseys .jg-none { margin: 0; padding: 8px 10px; background: var(--tile); font-size: 13px; color: var(--good); }
+
+.tab-jerseys .jg-foot-note { flex: 1 1 260px; min-width: 0; }
+
+/* narrower panes: no pictures; at the narrowest one column, and the body scrolls */
+@container (max-width: 1150px) {
+  .tab-jerseys .jg-pic { display: none; }
+  .tab-jerseys .jg-left { flex-grow: 1.35; }
+}
+@container (max-width: 760px) {
+  .tab-jerseys .jg-grid { flex: none; min-height: 0; flex-direction: column; }
+  .tab-jerseys .jg-left, .tab-jerseys .jg-right, .tab-jerseys .jg-left > .jg-gear { flex: none; overflow: visible; }
+  .tab-jerseys .jg-palette { overflow: visible; }
+  .tab-jerseys .jg-phead { margin-right: 0; }
+  .tab-jerseys .jg-prow { grid-template-columns: 24px 12px 24px minmax(0, 1fr) 76px 50px; gap: 6px; }
+  .tab-jerseys .jg-pieces { grid-template-columns: minmax(0, 1fr); }
+  .tab-jerseys .jg-foot-note { display: none; }
+}
+
+/* 768-line laptops and the smallest window */
+@media (max-height: 720px) {
+  .tab-jerseys .jg-body { gap: 6px; }
+  .tab-jerseys .jg-right { gap: 6px; }
+  .tab-jerseys .jg-tile { padding: 7px 8px; }
+  .tab-jerseys .jg-main { gap: 4px; }
+  .tab-jerseys .jg-pic { display: none; }
+  .tab-jerseys .jg-prow { min-height: 26px; }
+  /* one line per note; the Copy select and the stick buttons share a row with theirs */
+  .tab-jerseys .jg-actions { flex-wrap: nowrap; }
+  .tab-jerseys .jg-actions .small-note, .tab-jerseys .jg-cnote, .tab-jerseys .jg-error { flex: 1 1 0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .tab-jerseys .jg-actions .btn { flex: none; }
+  .tab-jerseys .jg-sticks { max-height: 90px; }
+  .tab-jerseys .jg-stick { min-height: 24px; }
+}
