@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 
-from overtime_core import overlay, sfo, xmlpatch
+from overtime_core import gamefiles, overlay, sfo, xmlpatch
 
 from . import paths
 
@@ -125,8 +125,12 @@ def install_dirs(user_dir):
 
 
 def read_game(game_dir):
-    """What a game folder holds: {'path', 'ok', 'title_id', 'app_ver', 'problem'}; ok = NHL 19 CUSA11126 v1.60."""
-    info = {'path': game_dir, 'ok': False, 'title_id': None, 'app_ver': None, 'problem': None}
+    """What a game folder holds: {'path', 'ok', 'title_id', 'app_ver', 'problem', 'update'}; ok = NHL 19 CUSA11126
+    v1.60. With the update in a folder of its own beside the base (`-UPDATE` / `-patch`, either folder picked), the
+    version is the update's and 'update' names that folder."""
+    base, update = gamefiles.roots(game_dir)
+    info = {'path': game_dir, 'ok': False, 'title_id': None, 'app_ver': None, 'problem': None, 'update': update}
+    game_dir = update or base
     try:
         values = {e.key: e.value for e in sfo.parse(_read(os.path.join(game_dir, 'sce_sys', 'param.sfo')))}
     except (OSError, sfo.SfoError) as e:
@@ -145,14 +149,19 @@ def read_game(game_dir):
 
 
 def find_games(user_dir, extra=()):
-    """NHL 19 folders in the emulator's game folders (and `extra`), each as read_game() sees it."""
+    """NHL 19 folders in the emulator's game folders (and `extra`), each as read_game() sees it. A base game with its
+    update in a folder of its own is one game, listed as the base folder."""
     out, seen = [], set()
     for root in list(extra) + install_dirs(user_dir):
         candidates = [root] + [e.path for e in _scandirs(root)]
         for c in candidates:
-            if os.path.isfile(os.path.join(c, 'sce_sys', 'param.sfo')) and os.path.normcase(c) not in seen:
-                seen.add(os.path.normcase(c))
-                info = read_game(c)
+            if not os.path.isfile(os.path.join(c, 'sce_sys', 'param.sfo')):
+                continue
+            base = gamefiles.roots(c)[0]
+            if os.path.normcase(base) not in seen:
+                seen.add(os.path.normcase(base))
+                same = os.path.normcase(base) == os.path.normcase(os.path.abspath(c))
+                info = read_game(c if same else base)   # the folder as found, or the base of an update folder
                 if info['title_id'] == TITLE_ID:
                     out.append(info)
     return out
@@ -496,15 +505,22 @@ def _file_sha(path, chunk=1 << 20, progress=None):
                 progress(len(block))
 
 
-def snapshot(game_dir, full=False, progress=None):
+def snapshot(game_dir, full=False, progress=None, pair=True):
     """The game folder as it is: {rel path: [size, sha256 or None]}. Quick = sizes plus eboot.bin and param.sfo
-    hashed; full = every file hashed (34 GB, minutes). `progress(done_bytes, total_bytes)`."""
+    hashed; full = every file hashed (34 GB, minutes). `progress(done_bytes, total_bytes)`. With an update folder
+    beside the base (and `pair`), both: the update's files as `..\\<update folder>\\...`, 'update' names it."""
+    base, update = gamefiles.roots(game_dir) if pair else (os.path.abspath(game_dir), None)
+    hashed = set(HASHED_ALWAYS)
     files = {}
-    for dirpath, _dirs, names in os.walk(game_dir):
-        for n in names:
-            p = os.path.join(dirpath, n)
-            files[os.path.relpath(p, game_dir)] = [os.path.getsize(p), None]
-    total = sum(s for s, _ in files.values()) if full else sum(files.get(r, [0])[0] for r in HASHED_ALWAYS)
+    for root in (base, update):
+        if root is None:
+            continue
+        hashed |= {os.path.relpath(os.path.join(root, h), base) for h in HASHED_ALWAYS}
+        for dirpath, _dirs, names in os.walk(root):
+            for n in names:
+                p = os.path.join(dirpath, n)
+                files[os.path.relpath(p, base)] = [os.path.getsize(p), None]
+    total = sum(s for s, _ in files.values()) if full else sum(files.get(r, [0])[0] for r in hashed)
     done = [0]
 
     def tick(n):
@@ -513,9 +529,9 @@ def snapshot(game_dir, full=False, progress=None):
             progress(done[0], total)
 
     for rel in sorted(files):
-        if full or rel in HASHED_ALWAYS:
-            files[rel][1] = _file_sha(os.path.join(game_dir, rel), progress=tick)
-    return {'game_dir': game_dir, 'made': _now(), 'full': full, 'files': files}
+        if full or rel in hashed:
+            files[rel][1] = _file_sha(os.path.join(base, rel), progress=tick)
+    return {'game_dir': game_dir, 'update': update, 'made': _now(), 'full': full, 'files': files}
 
 
 def clean_path():
@@ -559,7 +575,7 @@ def copy_game(src, dst, progress=None, margin=1 << 30):
         raise SetupError('the copy must go outside the game folder')
     if os.path.isdir(dst) and os.listdir(dst):
         raise SetupError(f'{dst} is not empty')
-    snap = snapshot(src)
+    snap = snapshot(src, pair=False)
     total = sum(s for s, _ in snap['files'].values())
     probe = dst
     while not os.path.isdir(probe):
@@ -578,7 +594,7 @@ def copy_game(src, dst, progress=None, margin=1 << 30):
         done += snap['files'][rel][0]
         if progress:
             progress(done, total)
-    if compare(snap, snapshot(dst)):
+    if compare(snap, snapshot(dst, pair=False)):
         raise SetupError('the copy does not match the game folder')
     return dst
 

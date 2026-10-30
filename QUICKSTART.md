@@ -8,6 +8,7 @@ server, Seattle and Utah, the real 2026-27 calendars and a full roster editor. A
 
 - Windows 10 or 11, and a PC that runs NHL 19 in shadPS4 (about 10 GB of free memory while playing).
 - Your own NHL 19 dump: **CUSA11126, update 1.60**. The app refuses other versions.
+  The update can be merged into the game folder or sit beside it (`CUSA11126-patch` or `CUSA11126-UPDATE`).
 - **shadPS4 NHL19-Build**: https://github.com/Kravickas/shadPS4/tree/NHL19-Build
 - For online play: a **ShadNet** account, signed in inside shadPS4.
 

@@ -35,8 +35,8 @@ DATA_ERRORS = (KeyError, IndexError, TypeError, ValueError, AttributeError)
 
 NO_CALENDAR = 'This roster has no calendar. Open another roster in Setup.'
 SEASON = {'on': False, 'available': False, 'label': 'My season',
-          'note': 'Comes after beta2: the results of your own Franchise or Season on this calendar.'}
-SEASON_LATER = 'My season comes after beta2: the results of your own Franchise or Season will show here.'
+          'note': 'Coming in a later version: the results of your own Franchise or Season on this calendar.'}
+SEASON_LATER = 'My season comes in a later version: the results of your own Franchise or Season will show here.'
 LEAGUE_TIP = "Click a day for all its games. Pick a team's games at the top right for its season."
 SYNC_ERROR = 'NHL.com did not answer. Check your internet connection, then try again.'
 SAME = 'Same as NHL.com. Pick 82 games if you want the shorter season.'

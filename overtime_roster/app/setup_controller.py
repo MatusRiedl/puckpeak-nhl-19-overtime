@@ -1,5 +1,5 @@
-"""The Setup tab: where shadPS4 is and its checks, the server and the firewall, the picture packs (Downloads), this
-program's updates, and which roster you work on (rosters_ctl). docs/ui/setup.md.
+"""The Setup tab: where shadPS4 is and its checks, the server and the firewall (their card shows on the Multiplayer
+tab), the picture packs (Downloads), this program's updates, and which roster you work on (rosters_ctl). docs/ui/setup.md.
 
 The one click (setup_patch, the Game patch tab's Patch) = checks -> a clean-game record (first time) -> the data
 overlay (the Game patch tab's layers, the default roster too when picked there) -> the eboot patch with the Overtime

@@ -25,14 +25,14 @@ function Day({ d, teamMode }) {
   </button>`;
 }
 
-// "My season": the results of the player's own Franchise or Season save on this calendar. Not in beta2.
+// "My season": the results of the player's own Franchise or Season save on this calendar. Not built yet.
 function SeasonSwitch({ season }) {
   if (!season) return null;
   return html`<div class=${cls('ca-season', !season.available && 'off')} title=${season.note}>
     <${Toggle} on=${season.on} disabled=${!season.available} label=${season.label}
       onChange=${(v) => call('calendar_season', v)}/>
     <span>${season.label}</span>
-    ${!season.available && html`<${Tag}>Comes after beta2<//>`}
+    ${!season.available && html`<${Tag}>Coming later<//>`}
   </div>`;
 }
 

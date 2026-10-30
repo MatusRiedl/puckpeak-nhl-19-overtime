@@ -25,7 +25,7 @@ def loc_paths(lang):
 
 
 def overlay_dir(game_dir):
-    return os.path.normpath(game_dir).rstrip('\\/') + '-mods'
+    return gamefiles.mods_dir(game_dir)
 
 
 def load_pack(path=None, lang='eng_us'):
@@ -72,7 +72,7 @@ def _load_json(path):
 
 
 def _target(game_dir, archive):
-    return os.path.join(overlay_dir(game_dir), os.path.relpath(archive, game_dir))
+    return os.path.join(overlay_dir(game_dir), *gamefiles.rel(game_dir, archive).split('/'))
 
 
 def status(game_dir, pack):

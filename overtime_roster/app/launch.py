@@ -8,7 +8,7 @@ import re
 import subprocess
 import sys
 
-from overtime_core import overlay
+from overtime_core import gamefiles, overlay
 
 from . import gamesetup
 
@@ -18,7 +18,8 @@ class LaunchError(RuntimeError):
 
 
 def command(emu_exe, game_dir, patch_file=None):
-    cmd = [os.path.abspath(emu_exe), '-g', os.path.join(os.path.abspath(game_dir), 'eboot.bin')]
+    """shadPS4 starts the base game's eboot.bin and lays its `-UPDATE` / `-patch` and `-mods` folders over it."""
+    cmd = [os.path.abspath(emu_exe), '-g', os.path.join(gamefiles.roots(game_dir)[0], 'eboot.bin')]
     if patch_file:
         cmd += ['-p', os.path.abspath(patch_file)]
     return cmd

@@ -277,7 +277,7 @@ def edits(game_dir, files):
     names = targets(game_dir)
     out, record = {}, {}
     for fam, entries in sorted(routed.items()):
-        archive = os.path.join(game_dir, *names[fam].split('/'))
+        archive = gamefiles.locate(game_dir, names[fam])
         if os.path.exists(archive):
             raise ArtError(f'{archive} is a game file: the art archive name is taken')
         out[archive] = entries

@@ -261,7 +261,7 @@ def _load_state(game_dir):
 
 
 def _rel(game_dir, path):
-    return os.path.relpath(path, game_dir).replace('\\', '/')
+    return gamefiles.rel(game_dir, path)
 
 
 def _target(game_dir, rel):
@@ -751,7 +751,7 @@ def status(game_dir, lang='eng_us'):
     out.update(applied_at=state.get('applied'), layers=state.get('layers', {}))
     for rel, rec in state.get('files', {}).items():
         path = _target(game_dir, rel)
-        source = os.path.join(game_dir, *rel.split('/'))
+        source = gamefiles.locate(game_dir, rel)
         present = os.path.exists(path)
         same = present and _sha256(path) == rec.get('sha256')
         out['files'][rel] = {'present': present, 'unchanged': same}

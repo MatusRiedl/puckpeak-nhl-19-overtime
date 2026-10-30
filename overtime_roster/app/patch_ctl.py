@@ -425,7 +425,8 @@ def verify(setup, full=False):
             step(f'{done / 2**30:.1f} of {total / 2**30:.1f} GB', done / total if total else -1)
         now = gamesetup.snapshot(game_dir, full=full, progress=progress if full else None)
         files = len(now['files'])
-        if clean is None or os.path.normcase(clean.get('game_dir', '')) != os.path.normcase(game_dir):
+        if (clean is None or os.path.normcase(clean.get('game_dir', '')) != os.path.normcase(game_dir)
+                or clean.get('update') != now.get('update')):   # a record from before the update folder counted
             gamesetup.save_clean(now)
             return None, files, False
         diff = gamesetup.compare(clean, now)

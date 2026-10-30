@@ -1,4 +1,4 @@
-// Setup: where shadPS4 is and its checks, online (server, firewall), which roster you work on, this program. Legacy's
+// Setup: where shadPS4 is and its checks, which roster you work on, this program (the Online card lives on Multiplayer). Legacy's
 // SetupTab (RpcsCard, RosterCard, ProgramCard) in NHL 19's look. The picture packs moved to Game patch's Photos, logos
 // pack card (v0.10.0); the slice keeps `downloads` for tools.
 // Slice `setup`; calls setup_*, rosters_* (docs/ui/setup.md).
@@ -79,7 +79,7 @@ function WhereCard({ s }) {
   <//>`;
 }
 
-// --- Online: the card shows on the Multiplayer tab (it needs the `setup` slice, see multiplayer.js) ---------------------------------------------------------------------------------------------------------------
+// --- Online: shown only on the Multiplayer tab (it needs the `setup` slice, see multiplayer.js) ---------------------------------------------------------------------------------------------------------------
 // the server address: sent on Enter or when the field is left; Escape puts the saved one back
 function ServerField({ value, disabled, bad }) {
   const [text, setText] = useState(value);
@@ -196,7 +196,6 @@ export default function Setup() {
     <div class="col">
       <${LinkRow}/>
       <${WhereCard} s=${s}/>
-      <${OnlineCard} s=${s}/>
       <${ProgramCard} s=${s}/>
     </div>
     <div class="col">

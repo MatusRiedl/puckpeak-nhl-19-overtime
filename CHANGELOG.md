@@ -2,6 +2,24 @@
 
 What changed in each version, for players.
 
+## 0.20.0 (2026-10-30)
+
+A hotfix for players whose NHL 19 update sits in a folder of its own.
+
+### Fixed
+
+- **NHL 19 with the update in its own folder.** shadPS4 can install update 1.60 beside the game, as `CUSA11126-patch`
+  (or `CUSA11126-UPDATE`) next to the base game `CUSA11126`. Overtime read only one of the two folders and stopped with
+  errors like `nhl/data/kettle/loc/eng_us-meta.xml not in ...\CUSA11126-patch`. Now it reads the two together, as the
+  emulator does, whichever of them is picked:
+  - Setup lists the game once, as the base folder.
+  - The game patch goes to `CUSA11126-mods`, the folder shadPS4 reads for that game. If 0.10.0 left a
+    `CUSA11126-patch-mods` folder, delete it.
+  - The Quick check and Verify every file cover both folders.
+  - If you merged the update into the base folder by hand to get around this, that keeps working.
+- **Calendar tab:** "My season" no longer says it comes after beta2. It is still to come.
+- **Setup tab:** the Online card (server address, firewall) shows only on the Multiplayer tab now, not on both.
+
 ## 0.10.0 (2026-10-29)
 
 The first public release. It includes everything from the closed betas (0.1.0-beta1 to beta4).
